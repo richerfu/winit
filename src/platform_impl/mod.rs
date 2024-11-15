@@ -13,6 +13,8 @@ mod orbital;
 mod web;
 #[cfg(windows_platform)]
 mod windows;
+#[cfg(ohos_platform)]
+mod ohos;
 
 #[cfg(android_platform)]
 use self::android as platform;
@@ -27,6 +29,8 @@ pub use self::platform::*;
 use self::web as platform;
 #[cfg(windows_platform)]
 use self::windows as platform;
+#[cfg(ohos_platform)]
+use self::ohos as platform;
 
 /// Helper for converting between platform-specific and generic
 /// [`VideoModeHandle`]/[`MonitorHandle`]
@@ -69,5 +73,6 @@ impl From<Fullscreen> for RootFullscreen {
     not(wayland_platform),
     not(web_platform),
     not(orbital_platform),
+    not(ohos_platform)
 ))]
 compile_error!("The platform you're compiling for is not supported by winit");
