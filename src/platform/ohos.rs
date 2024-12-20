@@ -1,0 +1,137 @@
+//! # OpenHarmony
+//!
+//! The OpenHarmony backend builds on (and exposes types from) the [`ndk`](https://docs.rs/ndk/) crate.
+//!
+//! Native OpenHarmony applications need some form of "glue" crate that is responsible
+//! for defining the main entry point for your Rust application as well as tracking
+//! various life-cycle events and synchronizing with the main JVM thread.
+//!
+//! Winit uses the [openharmony-ability](https://docs.rs/openharmony-ability/) as a
+//! glue crate (prior to `0.28` it used
+//! [ndk-glue](https://github.com/rust-windowing/android-ndk-rs/tree/master/ndk-glue)).
+//!
+//! The version of the glue crate that your application depends on _must_ match the
+//! version that Winit depends on because the glue crate is responsible for your
+//! application's main entry point. If Cargo resolves multiple versions, they will
+//! clash.
+//!
+
+use self::ability::{ConfigurationRef, OpenHarmonyApp, Rect};
+use crate::event_loop::{ActiveEventLoop, EventLoop, EventLoopBuilder};
+use crate::window::{Window, WindowAttributes};
+
+/// Additional methods on [`EventLoop`] that are specific to OpenHarmony.
+pub trait EventLoopExtOpenHarmony {
+    /// Get the [`OpenHarmonyApp`] which was used to create this event loop.
+    fn openharmony_app(&self) -> &OpenHarmonyApp;
+}
+
+impl EventLoopExtAndroid for EventLoop {
+    fn openharmony_app(&self) -> &OpenHarmonyApp {
+        &self.event_loop.openharmony_app
+    }
+}
+
+/// Additional methods on [`ActiveEventLoop`] that are specific to Android.
+pub trait ActiveEventLoopExtOpenHarmony {
+    /// Get the [`AndroidApp`] which was used to create this event loop.
+    fn openharmony_app(&self) -> &OpenHarmonyApp;
+}
+
+/// Additional methods on [`Window`] that are specific to Android.
+pub trait WindowExtOpenHarmony {
+    fn content_rect(&self) -> Rect;
+
+    fn config(&self) -> ConfigurationRef;
+}
+
+impl WindowExtAndroid for dyn Window + '_ {
+    fn content_rect(&self) -> Rect {
+        let window = self.as_any().downcast_ref::<crate::platform_impl::Window>().unwrap();
+        window.content_rect()
+    }
+
+    fn config(&self) -> ConfigurationRef {
+        let window = self.as_any().downcast_ref::<crate::platform_impl::Window>().unwrap();
+        window.config()
+    }
+}
+
+impl ActiveEventLoopExtOpenHarmony for dyn ActiveEventLoop + '_ {
+    fn openharmony_app(&self) -> &OpenHarmonyApp {
+        let event_loop =
+            self.as_any().downcast_ref::<crate::platform_impl::ActiveEventLoop>().unwrap();
+        &event_loop.app
+    }
+}
+
+/// Additional methods on [`WindowAttributes`] that are specific to Android.
+pub trait WindowAttributesExtOpenHarmony {}
+
+impl WindowAttributesExtOpenHarmony for WindowAttributes {}
+
+pub trait WindowAttributesExtOpenHarmony {
+    /// Associates the [`AndroidApp`] that was passed to `android_main()` with the event loop
+    ///
+    /// This must be called on Android since the [`AndroidApp`] is not global state.
+    fn with_openharmony_app(&mut self, app: AndroidApp) -> &mut Self;
+
+    /// Calling this will mark the volume keys to be manually handled by the application
+    ///
+    /// Default is to let the operating system handle the volume keys
+    fn handle_volume_keys(&mut self) -> &mut Self;
+}
+
+impl EventLoopBuilderExtOpenHarmony for EventLoopBuilder {
+    fn with_openharmony_app(&mut self, app: OpenHarmonyApp) -> &mut Self {
+        self.platform_specific.openharmony_app = Some(app);
+        self
+    }
+
+    fn handle_volume_keys(&mut self) -> &mut Self {
+        self.platform_specific.ignore_volume_keys = false;
+        self
+    }
+}
+
+/// Re-export of the `openharmony-ability` API
+///
+/// Winit re-exports the `openharmony-ability` API for convenience so that most
+/// applications can rely on the Winit crate to resolve the required version of
+/// `openharmony-ability` and avoid any chance of a conflict between Winit and the
+/// application crate.
+///
+/// Unlike most libraries there can only be a single implementation
+/// of the `openharmony-ability` glue crate linked with an application because
+/// it is responsible for the application's `android_main()` entry point.
+///
+/// Since Winit depends on a specific version of `android_activity` the simplest
+/// way to avoid creating a conflict is for applications to avoid explicitly
+/// depending on the `android_activity` crate, and instead consume the API that
+/// is re-exported by Winit.
+///
+/// For compatibility applications should then import the [`OpenHarmonyApp`] type for
+/// their `init(app: OpenHarmonyApp)` function like:
+/// ```rust
+/// #[cfg(target_env = "ohos")]
+/// use winit::platform::ohos::ability::OpenHarmonyApp;
+/// ```
+pub mod ability {
+    // We enable the `"native-activity"` feature just so that we can build the
+    // docs, but it'll be very confusing for users to see the docs with that
+    // feature enabled, so we avoid inlining it so that they're forced to view
+    // it on the crate's own docs.rs page.
+    #[doc(no_inline)]
+    #[cfg(ohos_platform)]
+    pub use openharmony_ability::*;
+
+    #[cfg(not(ohos_platform))]
+    #[doc(hidden)]
+    pub struct Rect;
+    #[cfg(not(ohos_platform))]
+    #[doc(hidden)]
+    pub struct ConfigurationRef;
+    #[cfg(not(ohos_platform))]
+    #[doc(hidden)]
+    pub struct OpenHarmonyApp;
+}

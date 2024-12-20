@@ -8,7 +8,7 @@ fn main() {
     cfg_aliases! {
         // Systems.
         android_platform: { target_os = "android" },
-        ohos_platform: { target_env = "ohos"},
+        ohos_platform: { target_env = "ohos" },
         web_platform: { all(target_family = "wasm", target_os = "unknown") },
         macos_platform: { target_os = "macos" },
         ios_platform: { all(target_vendor = "apple", not(target_os = "macos")) },

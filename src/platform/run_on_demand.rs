@@ -55,6 +55,7 @@ pub trait EventLoopExtRunOnDemand {
     ///   block the browser and there is nothing that can be polled to ask for new events. Events
     ///   are delivered via callbacks based on an event loop that is internal to the browser itself.
     /// - **iOS:** It's not possible to stop and start an `UIApplication` repeatedly on iOS.
+    /// - **OpenHarmony:** It's not possible to stop and start an Application repeatedly on OpenHarmony/HarmonyNext.
     ///
     /// [^1]: `spawn_app()` is only available on the Web platforms.
     ///

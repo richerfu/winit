@@ -91,6 +91,8 @@ pub enum NativeKeyCode {
     Unidentified,
     /// An Android "scancode".
     Android(u32),
+    /// A OpenHarmony "scancode".
+    Ohos(u32),
     /// A macOS "scancode".
     MacOS(u16),
     /// A Windows "scancode".
@@ -115,6 +117,10 @@ impl std::fmt::Debug for NativeKeyCode {
                 debug_tuple = f.debug_tuple("MacOS");
                 debug_tuple.field(&format_args!("0x{code:04X}"));
             },
+            Ohos(code) => {
+                debug_tuple = f.debug_tuple("Ohos");
+                debug_tuple.field(&format_args!("0x{code:04X}"));
+            }
             Windows(code) => {
                 debug_tuple = f.debug_tuple("Windows");
                 debug_tuple.field(&format_args!("0x{code:04X}"));
@@ -144,6 +150,8 @@ pub enum NativeKey {
     Unidentified,
     /// An Android "keycode", which is similar to a "virtual-key code" on Windows.
     Android(u32),
+    /// A OpenHarmony "keycode", which is similar to a "virtual-key code" on Android.
+    Ohos(u32),
     /// A macOS "scancode". There does not appear to be any direct analogue to either keysyms or
     /// "virtual-key" codes in macOS, so we report the scancode instead.
     MacOS(u16),
@@ -165,6 +173,10 @@ impl std::fmt::Debug for NativeKey {
             },
             Android(code) => {
                 debug_tuple = f.debug_tuple("Android");
+                debug_tuple.field(&format_args!("0x{code:04X}"));
+            },
+            Ohos(code) => {
+                debug_tuple = f.debug_tuple("Ohos");
                 debug_tuple.field(&format_args!("0x{code:04X}"));
             },
             MacOS(code) => {
@@ -194,6 +206,7 @@ impl From<NativeKeyCode> for NativeKey {
         match code {
             NativeKeyCode::Unidentified => NativeKey::Unidentified,
             NativeKeyCode::Android(x) => NativeKey::Android(x),
+            NativeKeyCode::Ohos(x) => NativeKey::Ohos(x),
             NativeKeyCode::MacOS(x) => NativeKey::MacOS(x),
             NativeKeyCode::Windows(x) => NativeKey::Windows(x),
             NativeKeyCode::Xkb(x) => NativeKey::Xkb(x),

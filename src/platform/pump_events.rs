@@ -77,6 +77,8 @@ pub trait EventLoopExtPumpEvents {
     ///   itself.
     /// - **iOS:** It's not possible to stop and start an `NSApplication` repeatedly on iOS so
     ///   there's no way to support the same approach to polling as on MacOS.
+    /// - **OpenHarmony:** It's not possible to stop and start an Application repeatedly on OpenHarmony so
+    ///   there's no way to support the same approach to polling as on OpenHarmony/HarmonyNext.
     ///
     /// ## Platform-specific
     ///
