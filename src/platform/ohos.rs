@@ -16,7 +16,7 @@
 //! clash.
 //!
 
-use self::ability::{ConfigurationRef, OpenHarmonyApp, Rect};
+use self::ability::{Configuration, OpenHarmonyApp, Rect};
 use crate::event_loop::{ActiveEventLoop, EventLoop, EventLoopBuilder};
 use crate::window::{Window, WindowAttributes};
 
@@ -26,7 +26,7 @@ pub trait EventLoopExtOpenHarmony {
     fn openharmony_app(&self) -> &OpenHarmonyApp;
 }
 
-impl EventLoopExtAndroid for EventLoop {
+impl EventLoopExtOpenHarmony for EventLoop {
     fn openharmony_app(&self) -> &OpenHarmonyApp {
         &self.event_loop.openharmony_app
     }
@@ -42,16 +42,16 @@ pub trait ActiveEventLoopExtOpenHarmony {
 pub trait WindowExtOpenHarmony {
     fn content_rect(&self) -> Rect;
 
-    fn config(&self) -> ConfigurationRef;
+    fn config(&self) -> Configuration;
 }
 
-impl WindowExtAndroid for dyn Window + '_ {
+impl WindowExtOpenHarmony for dyn Window + '_ {
     fn content_rect(&self) -> Rect {
         let window = self.as_any().downcast_ref::<crate::platform_impl::Window>().unwrap();
         window.content_rect()
     }
 
-    fn config(&self) -> ConfigurationRef {
+    fn config(&self) -> Configuration {
         let window = self.as_any().downcast_ref::<crate::platform_impl::Window>().unwrap();
         window.config()
     }
@@ -70,26 +70,17 @@ pub trait WindowAttributesExtOpenHarmony {}
 
 impl WindowAttributesExtOpenHarmony for WindowAttributes {}
 
-pub trait WindowAttributesExtOpenHarmony {
-    /// Associates the [`AndroidApp`] that was passed to `android_main()` with the event loop
+pub trait EventLoopBuilderExtOpenHarmony {
+    /// Associates the [`OpenHarmonyApp`] that was passed to `openharmony-ability::ability` with the event loop
     ///
-    /// This must be called on Android since the [`AndroidApp`] is not global state.
-    fn with_openharmony_app(&mut self, app: AndroidApp) -> &mut Self;
+    /// This must be called on OpenHarmony since the [`OpenHarmonyApp`] is not global state.
+    fn with_openharmony_app(&mut self, app: OpenHarmonyApp) -> &mut Self;
 
-    /// Calling this will mark the volume keys to be manually handled by the application
-    ///
-    /// Default is to let the operating system handle the volume keys
-    fn handle_volume_keys(&mut self) -> &mut Self;
 }
 
 impl EventLoopBuilderExtOpenHarmony for EventLoopBuilder {
     fn with_openharmony_app(&mut self, app: OpenHarmonyApp) -> &mut Self {
         self.platform_specific.openharmony_app = Some(app);
-        self
-    }
-
-    fn handle_volume_keys(&mut self) -> &mut Self {
-        self.platform_specific.ignore_volume_keys = false;
         self
     }
 }

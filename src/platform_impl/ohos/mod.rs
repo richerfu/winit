@@ -1,13 +1,17 @@
+use std::borrow::{Borrow, BorrowMut};
 use std::cell::Cell;
 use std::hash::Hash;
 use std::num::{NonZeroU16, NonZeroU32};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use tracing::{debug, trace, warn};
 
-use openharmony_ability::{Event as MainEvent, OpenHarmonyApp, OpenHarmonyWaker};
+use openharmony_ability::{
+    Configuration, Event as MainEvent, OpenHarmonyApp, OpenHarmonyWaker, Rect,
+};
 
 use crate::application::ApplicationHandler;
 use crate::cursor::Cursor;
@@ -19,19 +23,20 @@ use crate::event_loop::{
     EventLoopProxy as RootEventLoopProxy, OwnedDisplayHandle as RootOwnedDisplayHandle,
 };
 use crate::monitor::MonitorHandle as RootMonitorHandle;
-use crate::platform::pump_events::PumpStatus;
 use crate::window::{
     self, CursorGrabMode, CustomCursor, CustomCursorSource, Fullscreen, ImePurpose,
     ResizeDirection, Theme, Window as CoreWindow, WindowAttributes, WindowButtons, WindowId,
     WindowLevel,
 };
 
-mod keycodes;
+// mod keycodes;
 
 pub(crate) use crate::cursor::{
     NoCustomCursor as PlatformCustomCursor, NoCustomCursor as PlatformCustomCursorSource,
 };
 pub(crate) use crate::icon::NoIcon as PlatformIcon;
+
+static HAS_FOCUS: AtomicBool = AtomicBool::new(true);
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct KeyEventExtra {}
@@ -41,19 +46,17 @@ pub struct EventLoop {
     window_target: ActiveEventLoop,
     running: bool,
     cause: StartCause,
-    ignore_volume_keys: bool,
     combining_accent: Option<char>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PlatformSpecificEventLoopAttributes {
     pub(crate) openharmony_app: Option<OpenHarmonyApp>,
-    pub(crate) ignore_volume_keys: bool,
 }
 
 impl Default for PlatformSpecificEventLoopAttributes {
     fn default() -> Self {
-        Self { openharmony_app: Default::default(), ignore_volume_keys: true }
+        Self { openharmony_app: Default::default() }
     }
 }
 
@@ -70,7 +73,6 @@ impl EventLoop {
             "An `OpenHarmonyApp` as passed to lib is required to create an `EventLoop` on \
              OpenHarmony or HarmonyNext",
         );
-        let redraw_flag = SharedFlag::new();
 
         Ok(Self {
             openharmony_app: openharmony_app.clone(),
@@ -81,7 +83,6 @@ impl EventLoop {
             },
             running: false,
             cause: StartCause::Init,
-            ignore_volume_keys: attributes.ignore_volume_keys,
             combining_accent: None,
         })
     }
@@ -90,21 +91,190 @@ impl EventLoop {
         &self.window_target
     }
 
-    fn single_iteration<A: ApplicationHandler>(
-        &mut self,
-        main_event: Option<MainEvent>,
-        app: &mut A,
-    ) {
+    // fn handle_input_event<A: ApplicationHandler>(
+    //     &mut self,
+    //     android_app: &AndroidApp,
+    //     event: &InputEvent<'_>,
+    //     app: &mut A,
+    // ) -> InputStatus {
+    //     let mut input_status = InputStatus::Handled;
+    //     match event {
+    //         InputEvent::MotionEvent(motion_event) => {
+    //             let device_id = Some(DeviceId::from_raw(motion_event.device_id() as i64));
+    //             let action = motion_event.action();
+
+    //             let pointers: Option<
+    //                 Box<dyn Iterator<Item = openharmony_ability::input::Pointer<'_>>>,
+    //             > = match action {
+    //                 MotionAction::Down
+    //                 | MotionAction::PointerDown
+    //                 | MotionAction::Up
+    //                 | MotionAction::PointerUp => Some(Box::new(std::iter::once(
+    //                     motion_event.pointer_at_index(motion_event.pointer_index()),
+    //                 ))),
+    //                 MotionAction::Move | MotionAction::Cancel => {
+    //                     Some(Box::new(motion_event.pointers()))
+    //                 },
+    //                 // TODO mouse events
+    //                 _ => None,
+    //             };
+
+    //             if let Some(pointers) = pointers {
+    //                 for pointer in pointers {
+    //                     let tool_type = pointer.tool_type();
+    //                     let position =
+    //                         PhysicalPosition { x: pointer.x() as _, y: pointer.y() as _ };
+    //                     trace!(
+    //                         "Input event {device_id:?}, {action:?}, loc={position:?}, \
+    //                          pointer={pointer:?}, tool_type={tool_type:?}"
+    //                     );
+    //                     let finger_id = event::FingerId(FingerId(pointer.pointer_id()));
+    //                     let force = Some(Force::Normalized(pointer.pressure() as f64));
+
+    //                     match action {
+    //                         MotionAction::Down | MotionAction::PointerDown => {
+    //                             let event = event::WindowEvent::PointerEntered {
+    //                                 device_id,
+    //                                 position,
+    //                                 kind: match tool_type {
+    //                                     android_activity::input::ToolType::Finger => {
+    //                                         event::PointerKind::Touch(finger_id)
+    //                                     },
+    //                                     // TODO mouse events
+    //                                     android_activity::input::ToolType::Mouse => continue,
+    //                                     _ => event::PointerKind::Unknown,
+    //                                 },
+    //                             };
+    //                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+    //                             let event = event::WindowEvent::PointerButton {
+    //                                 device_id,
+    //                                 state: event::ElementState::Pressed,
+    //                                 position,
+    //                                 button: match tool_type {
+    //                                     android_activity::input::ToolType::Finger => {
+    //                                         event::ButtonSource::Touch { finger_id, force }
+    //                                     },
+    //                                     // TODO mouse events
+    //                                     android_activity::input::ToolType::Mouse => continue,
+    //                                     _ => event::ButtonSource::Unknown(0),
+    //                                 },
+    //                             };
+    //                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+    //                         },
+    //                         MotionAction::Move => {
+    //                             let event = event::WindowEvent::PointerMoved {
+    //                                 device_id,
+    //                                 position,
+    //                                 source: match tool_type {
+    //                                     android_activity::input::ToolType::Finger => {
+    //                                         event::PointerSource::Touch { finger_id, force }
+    //                                     },
+    //                                     // TODO mouse events
+    //                                     android_activity::input::ToolType::Mouse => continue,
+    //                                     _ => event::PointerSource::Unknown,
+    //                                 },
+    //                             };
+    //                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+    //                         },
+    //                         MotionAction::Up | MotionAction::PointerUp | MotionAction::Cancel => {
+    //                             if let MotionAction::Up | MotionAction::PointerUp = action {
+    //                                 let event = event::WindowEvent::PointerButton {
+    //                                     device_id,
+    //                                     state: event::ElementState::Released,
+    //                                     position,
+    //                                     button: match tool_type {
+    //                                         android_activity::input::ToolType::Finger => {
+    //                                             event::ButtonSource::Touch { finger_id, force }
+    //                                         },
+    //                                         // TODO mouse events
+    //                                         android_activity::input::ToolType::Mouse => continue,
+    //                                         _ => event::ButtonSource::Unknown(0),
+    //                                     },
+    //                                 };
+    //                                 app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+    //                             }
+
+    //                             let event = event::WindowEvent::PointerLeft {
+    //                                 device_id,
+    //                                 position: Some(position),
+    //                                 kind: match tool_type {
+    //                                     android_activity::input::ToolType::Finger => {
+    //                                         event::PointerKind::Touch(finger_id)
+    //                                     },
+    //                                     // TODO mouse events
+    //                                     android_activity::input::ToolType::Mouse => continue,
+    //                                     _ => event::PointerKind::Unknown,
+    //                                 },
+    //                             };
+    //                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+    //                         },
+    //                         _ => unreachable!(),
+    //                     }
+    //                 }
+    //             }
+    //         },
+    //         InputEvent::KeyEvent(key) => {
+    //             match key.key_code() {
+    //                 // Flag keys related to volume as unhandled. While winit does not have a way for
+    //                 // applications to configure what keys to flag as handled,
+    //                 // this appears to be a good default until winit
+    //                 // can be configured.
+    //                 Keycode::VolumeUp | Keycode::VolumeDown | Keycode::VolumeMute
+    //                     if self.ignore_volume_keys =>
+    //                 {
+    //                     input_status = InputStatus::Unhandled
+    //                 },
+    //                 keycode => {
+    //                     let state = match key.action() {
+    //                         KeyAction::Down => event::ElementState::Pressed,
+    //                         KeyAction::Up => event::ElementState::Released,
+    //                         _ => event::ElementState::Released,
+    //                     };
+
+    //                     let key_char = keycodes::character_map_and_combine_key(
+    //                         android_app,
+    //                         key,
+    //                         &mut self.combining_accent,
+    //                     );
+
+    //                     let event = event::WindowEvent::KeyboardInput {
+    //                         device_id: Some(DeviceId::from_raw(key.device_id() as i64)),
+    //                         event: event::KeyEvent {
+    //                             state,
+    //                             physical_key: keycodes::to_physical_key(keycode),
+    //                             logical_key: keycodes::to_logical(key_char, keycode),
+    //                             location: keycodes::to_location(keycode),
+    //                             repeat: key.repeat_count() > 0,
+    //                             text: None,
+    //                             platform_specific: KeyEventExtra {},
+    //                         },
+    //                         is_synthetic: false,
+    //                     };
+
+    //                     app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+    //                 },
+    //             }
+    //         },
+    //         _ => {
+    //             warn!("Unknown android_activity input event {event:?}")
+    //         },
+    //     }
+
+    //     input_status
+    // }
+
+    pub fn run_app<A: ApplicationHandler>(self, mut app: A) -> Result<(), EventLoopError> {
         trace!("Mainloop iteration");
 
         let cause = self.cause;
         let mut resized = false;
+        let mut pending_redraw = false;
 
         app.new_events(&self.window_target, cause);
 
-        if let Some(event) = main_event {
-            trace!("Handling main event {:?}", event);
+        let openharmony_app = self.openharmony_app.clone();
 
+        openharmony_app.run_loop(|event| {
             match event {
                 MainEvent::SurfaceCreate { .. } => {
                     app.can_create_surfaces(&self.window_target);
@@ -112,8 +282,8 @@ impl EventLoop {
                 MainEvent::SurfaceDestroy { .. } => {
                     app.destroy_surfaces(&self.window_target);
                 },
-                MainEvent::WindowResize { .. } => resized = true,
-                MainEvent::WindowRedraw { .. } => pending_redraw = true,
+                MainEvent::WindowResize { .. } => {},
+                MainEvent::WindowRedraw { .. } => {},
                 MainEvent::ContentRectChange { .. } => {
                     warn!("TODO: find a way to notify application of content rect change");
                 },
@@ -128,19 +298,20 @@ impl EventLoop {
                     app.window_event(&self.window_target, GLOBAL_WINDOW, event);
                 },
                 MainEvent::ConfigChanged { .. } => {
-                    let old_scale_factor = scale_factor(&self.openharmony_app);
-                    let scale_factor = scale_factor(&self.openharmony_app);
-                    if (scale_factor - old_scale_factor).abs() < f64::EPSILON {
-                        let new_surface_size = Arc::new(Mutex::new(screen_size(&self.openharmony_app)));
-                        let event = event::WindowEvent::ScaleFactorChanged {
-                            surface_size_writer: SurfaceSizeWriter::new(Arc::downgrade(
-                                &new_surface_size,
-                            )),
-                            scale_factor,
-                        };
+                    // let old_scale_factor = scale_factor(&self.openharmony_app);
+                    // let scale_factor = scale_factor(&self.openharmony_app);
+                    // if (scale_factor - old_scale_factor).abs() < f64::EPSILON {
+                    //     let new_surface_size =
+                    //         Arc::new(Mutex::new(screen_size(&self.openharmony_app)));
+                    //     let event = event::WindowEvent::ScaleFactorChanged {
+                    //         surface_size_writer: SurfaceSizeWriter::new(Arc::downgrade(
+                    //             &new_surface_size,
+                    //         )),
+                    //         scale_factor,
+                    //     };
 
-                        app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-                    }
+                    //     app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                    // }
                 },
                 MainEvent::LowMemory => {
                     app.memory_warning(&self.window_target);
@@ -151,7 +322,7 @@ impl EventLoop {
                 MainEvent::Resume { .. } => {
                     debug!("App Resumed - is running");
                     // TODO: This is incorrect - will be solved in https://github.com/rust-windowing/winit/pull/3897
-                    self.running = true;
+                    // self.running = true;
                 },
                 MainEvent::SaveState { .. } => {
                     // XXX: how to forward this state to applications?
@@ -161,7 +332,7 @@ impl EventLoop {
                 MainEvent::Pause => {
                     debug!("App Paused - stopped running");
                     // TODO: This is incorrect - will be solved in https://github.com/rust-windowing/winit/pull/3897
-                    self.running = false;
+                    // self.running = false;
                 },
                 MainEvent::Stop => {
                     app.suspended(self.window_target());
@@ -179,325 +350,9 @@ impl EventLoop {
                     trace!("Unknown MainEvent {unknown:?} (ignored)");
                 },
             }
-        } else {
-            trace!("No main event to handle");
-        }
-
-        // temporarily decouple `openharmony_app` from `self` so we aren't holding
-        // a borrow of `self` while iterating
-        let openharmony_app = self.openharmony_app.clone();
-
-        if self.window_target.proxy_wake_up.swap(false, Ordering::Relaxed) {
-            app.proxy_wake_up(&self.window_target);
-        }
-
-        // This is always the last event we dispatch before poll again
-        app.about_to_wait(&self.window_target);
-
-        self.pending_redraw = pending_redraw;
-    }
-
-    fn handle_input_event<A: ApplicationHandler>(
-        &mut self,
-        android_app: &AndroidApp,
-        event: &InputEvent<'_>,
-        app: &mut A,
-    ) -> InputStatus {
-        let mut input_status = InputStatus::Handled;
-        match event {
-            InputEvent::MotionEvent(motion_event) => {
-                let device_id = Some(DeviceId::from_raw(motion_event.device_id() as i64));
-                let action = motion_event.action();
-
-                let pointers: Option<
-                    Box<dyn Iterator<Item = openharmony_ability::input::Pointer<'_>>>,
-                > = match action {
-                    MotionAction::Down
-                    | MotionAction::PointerDown
-                    | MotionAction::Up
-                    | MotionAction::PointerUp => Some(Box::new(std::iter::once(
-                        motion_event.pointer_at_index(motion_event.pointer_index()),
-                    ))),
-                    MotionAction::Move | MotionAction::Cancel => {
-                        Some(Box::new(motion_event.pointers()))
-                    },
-                    // TODO mouse events
-                    _ => None,
-                };
-
-                if let Some(pointers) = pointers {
-                    for pointer in pointers {
-                        let tool_type = pointer.tool_type();
-                        let position =
-                            PhysicalPosition { x: pointer.x() as _, y: pointer.y() as _ };
-                        trace!(
-                            "Input event {device_id:?}, {action:?}, loc={position:?}, \
-                             pointer={pointer:?}, tool_type={tool_type:?}"
-                        );
-                        let finger_id = event::FingerId(FingerId(pointer.pointer_id()));
-                        let force = Some(Force::Normalized(pointer.pressure() as f64));
-
-                        match action {
-                            MotionAction::Down | MotionAction::PointerDown => {
-                                let event = event::WindowEvent::PointerEntered {
-                                    device_id,
-                                    position,
-                                    kind: match tool_type {
-                                        android_activity::input::ToolType::Finger => {
-                                            event::PointerKind::Touch(finger_id)
-                                        },
-                                        // TODO mouse events
-                                        android_activity::input::ToolType::Mouse => continue,
-                                        _ => event::PointerKind::Unknown,
-                                    },
-                                };
-                                app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-                                let event = event::WindowEvent::PointerButton {
-                                    device_id,
-                                    state: event::ElementState::Pressed,
-                                    position,
-                                    button: match tool_type {
-                                        android_activity::input::ToolType::Finger => {
-                                            event::ButtonSource::Touch { finger_id, force }
-                                        },
-                                        // TODO mouse events
-                                        android_activity::input::ToolType::Mouse => continue,
-                                        _ => event::ButtonSource::Unknown(0),
-                                    },
-                                };
-                                app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-                            },
-                            MotionAction::Move => {
-                                let event = event::WindowEvent::PointerMoved {
-                                    device_id,
-                                    position,
-                                    source: match tool_type {
-                                        android_activity::input::ToolType::Finger => {
-                                            event::PointerSource::Touch { finger_id, force }
-                                        },
-                                        // TODO mouse events
-                                        android_activity::input::ToolType::Mouse => continue,
-                                        _ => event::PointerSource::Unknown,
-                                    },
-                                };
-                                app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-                            },
-                            MotionAction::Up | MotionAction::PointerUp | MotionAction::Cancel => {
-                                if let MotionAction::Up | MotionAction::PointerUp = action {
-                                    let event = event::WindowEvent::PointerButton {
-                                        device_id,
-                                        state: event::ElementState::Released,
-                                        position,
-                                        button: match tool_type {
-                                            android_activity::input::ToolType::Finger => {
-                                                event::ButtonSource::Touch { finger_id, force }
-                                            },
-                                            // TODO mouse events
-                                            android_activity::input::ToolType::Mouse => continue,
-                                            _ => event::ButtonSource::Unknown(0),
-                                        },
-                                    };
-                                    app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-                                }
-
-                                let event = event::WindowEvent::PointerLeft {
-                                    device_id,
-                                    position: Some(position),
-                                    kind: match tool_type {
-                                        android_activity::input::ToolType::Finger => {
-                                            event::PointerKind::Touch(finger_id)
-                                        },
-                                        // TODO mouse events
-                                        android_activity::input::ToolType::Mouse => continue,
-                                        _ => event::PointerKind::Unknown,
-                                    },
-                                };
-                                app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-                            },
-                            _ => unreachable!(),
-                        }
-                    }
-                }
-            },
-            InputEvent::KeyEvent(key) => {
-                match key.key_code() {
-                    // Flag keys related to volume as unhandled. While winit does not have a way for
-                    // applications to configure what keys to flag as handled,
-                    // this appears to be a good default until winit
-                    // can be configured.
-                    Keycode::VolumeUp | Keycode::VolumeDown | Keycode::VolumeMute
-                        if self.ignore_volume_keys =>
-                    {
-                        input_status = InputStatus::Unhandled
-                    },
-                    keycode => {
-                        let state = match key.action() {
-                            KeyAction::Down => event::ElementState::Pressed,
-                            KeyAction::Up => event::ElementState::Released,
-                            _ => event::ElementState::Released,
-                        };
-
-                        let key_char = keycodes::character_map_and_combine_key(
-                            android_app,
-                            key,
-                            &mut self.combining_accent,
-                        );
-
-                        let event = event::WindowEvent::KeyboardInput {
-                            device_id: Some(DeviceId::from_raw(key.device_id() as i64)),
-                            event: event::KeyEvent {
-                                state,
-                                physical_key: keycodes::to_physical_key(keycode),
-                                logical_key: keycodes::to_logical(key_char, keycode),
-                                location: keycodes::to_location(keycode),
-                                repeat: key.repeat_count() > 0,
-                                text: None,
-                                platform_specific: KeyEventExtra {},
-                            },
-                            is_synthetic: false,
-                        };
-
-                        app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-                    },
-                }
-            },
-            _ => {
-                warn!("Unknown android_activity input event {event:?}")
-            },
-        }
-
-        input_status
-    }
-
-    pub fn run_app<A: ApplicationHandler>(mut self, app: A) -> Result<(), EventLoopError> {
-        self.run_app_on_demand(app)
-    }
-
-    pub fn run_app_on_demand<A: ApplicationHandler>(
-        &mut self,
-        mut app: A,
-    ) -> Result<(), EventLoopError> {
-        self.window_target.clear_exit();
-        loop {
-            match self.pump_app_events(None, &mut app) {
-                PumpStatus::Exit(0) => {
-                    break Ok(());
-                },
-                PumpStatus::Exit(code) => {
-                    break Err(EventLoopError::ExitFailure(code));
-                },
-                _ => {
-                    continue;
-                },
-            }
-        }
-    }
-
-    pub fn pump_app_events<A: ApplicationHandler>(
-        &mut self,
-        timeout: Option<Duration>,
-        mut app: A,
-    ) -> PumpStatus {
-        if !self.loop_running {
-            self.loop_running = true;
-
-            // Reset the internal state for the loop as we start running to
-            // ensure consistent behaviour in case the loop runs and exits more
-            // than once
-            self.pending_redraw = false;
-            self.cause = StartCause::Init;
-
-            // run the initial loop iteration
-            self.single_iteration(None, &mut app);
-        }
-
-        // Consider the possibility that the `StartCause::Init` iteration could
-        // request to Exit
-        if !self.exiting() {
-            self.poll_events_with_timeout(timeout, &mut app);
-        }
-        if self.exiting() {
-            self.loop_running = false;
-
-            app.exiting(&self.window_target);
-
-            PumpStatus::Exit(0)
-        } else {
-            PumpStatus::Continue
-        }
-    }
-
-    fn poll_events_with_timeout<A: ApplicationHandler>(
-        &mut self,
-        mut timeout: Option<Duration>,
-        app: &mut A,
-    ) {
-        let start = Instant::now();
-
-        self.pending_redraw |= self.redraw_flag.get_and_reset();
-
-        timeout = if self.running
-            && (self.pending_redraw || self.window_target.proxy_wake_up.load(Ordering::Relaxed))
-        {
-            // If we already have work to do then we don't want to block on the next poll
-            Some(Duration::ZERO)
-        } else {
-            let control_flow_timeout = match self.control_flow() {
-                ControlFlow::Wait => None,
-                ControlFlow::Poll => Some(Duration::ZERO),
-                ControlFlow::WaitUntil(wait_deadline) => {
-                    Some(wait_deadline.saturating_duration_since(start))
-                },
-            };
-
-            min_timeout(control_flow_timeout, timeout)
-        };
-
-        let android_app = self.android_app.clone(); // Don't borrow self as part of poll expression
-        android_app.poll_events(timeout, |poll_event| {
-            let mut main_event = None;
-
-            match poll_event {
-                android_activity::PollEvent::Wake => {
-                    // In the X11 backend it's noted that too many false-positive wake ups
-                    // would cause the event loop to run continuously. They handle this by
-                    // re-checking for pending events (assuming they cover all
-                    // valid reasons for a wake up).
-                    //
-                    // For now, user_events and redraw_requests are the only reasons to expect
-                    // a wake up here so we can ignore the wake up if there are no events/requests.
-                    // We also ignore wake ups while suspended.
-                    self.pending_redraw |= self.redraw_flag.get_and_reset();
-                    if !self.running
-                        || (!self.pending_redraw
-                            && !self.window_target.proxy_wake_up.load(Ordering::Relaxed))
-                    {
-                        return;
-                    }
-                },
-                android_activity::PollEvent::Timeout => {},
-                android_activity::PollEvent::Main(event) => {
-                    main_event = Some(event);
-                },
-                unknown_event => {
-                    warn!("Unknown poll event {unknown_event:?} (ignored)");
-                },
-            }
-
-            self.cause = match self.control_flow() {
-                ControlFlow::Poll => StartCause::Poll,
-                ControlFlow::Wait => StartCause::WaitCancelled { start, requested_resume: None },
-                ControlFlow::WaitUntil(deadline) => {
-                    if Instant::now() < deadline {
-                        StartCause::WaitCancelled { start, requested_resume: Some(deadline) }
-                    } else {
-                        StartCause::ResumeTimeReached { start, requested_resume: deadline }
-                    }
-                },
-            };
-
-            self.single_iteration(main_event, app);
         });
+
+        Ok(())
     }
 
     fn control_flow(&self) -> ControlFlow {
@@ -534,9 +389,7 @@ impl ActiveEventLoop {
 
 impl RootActiveEventLoop for ActiveEventLoop {
     fn create_proxy(&self) -> RootEventLoopProxy {
-        let event_loop_proxy = EventLoopProxy {
-            waker: self.app.create_waker(),
-        };
+        let event_loop_proxy = EventLoopProxy { waker: self.app.create_waker() };
         RootEventLoopProxy { event_loop_proxy }
     }
 
@@ -639,10 +492,10 @@ impl Window {
     ) -> Result<Self, RequestError> {
         // FIXME this ignores requested window attributes
 
-        Ok(Self { app: el.app.clone()})
+        Ok(Self { app: el.app.clone() })
     }
 
-    pub fn config(&self) -> ConfigurationRef {
+    pub fn config(&self) -> Configuration {
         self.app.config()
     }
 
@@ -654,10 +507,13 @@ impl Window {
     // Allow the usage of HasRawWindowHandle inside this function
     #[allow(deprecated)]
     fn raw_window_handle_rwh_06(&self) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
-        use rwh_06::HasRawWindowHandle;
-
         if let Some(native_window) = self.app.native_window().as_ref() {
-            native_window.raw_window_handle()
+            if let Some(window) = native_window.raw_window_handle() {
+                Ok(window)
+            } else {
+                tracing::error!("Cannot get the native window handle, it's null.");
+                Err(rwh_06::HandleError::Unavailable)
+            }
         } else {
             tracing::error!(
                 "Cannot get the native window, it's null and will always be null before \
@@ -695,6 +551,11 @@ impl CoreWindow for Window {
         GLOBAL_WINDOW
     }
 
+    fn request_redraw(&self) {}
+    fn scale_factor(&self) -> f64 {
+        1.0
+    }
+
     fn primary_monitor(&self) -> Option<RootMonitorHandle> {
         None
     }
@@ -705,14 +566,6 @@ impl CoreWindow for Window {
 
     fn current_monitor(&self) -> Option<RootMonitorHandle> {
         None
-    }
-
-    fn scale_factor(&self) -> f64 {
-        scale_factor(&self.app)
-    }
-
-    fn request_redraw(&self) {
-        self.redraw_requester.request_redraw()
     }
 
     fn pre_present_notify(&self) {}
@@ -730,15 +583,17 @@ impl CoreWindow for Window {
     }
 
     fn surface_size(&self) -> PhysicalSize<u32> {
-        self.outer_size()
+        // self.outer_size()
+        PhysicalSize { width: 1080, height: 2720 }
     }
 
     fn request_surface_size(&self, _size: Size) -> Option<PhysicalSize<u32>> {
-        Some(self.surface_size())
+        // Some(self.surface_size())
+        None
     }
 
     fn outer_size(&self) -> PhysicalSize<u32> {
-        screen_size(&self.app)
+        PhysicalSize { width: 1080, height: 2720 }
     }
 
     fn set_min_surface_size(&self, _: Option<Size>) {}
@@ -927,14 +782,14 @@ impl VideoModeHandle {
     }
 }
 
-fn screen_size(app: &AndroidApp) -> PhysicalSize<u32> {
-    if let Some(native_window) = app.native_window() {
-        PhysicalSize::new(native_window.width() as _, native_window.height() as _)
-    } else {
-        PhysicalSize::new(0, 0)
-    }
-}
+// fn screen_size(app: &AndroidApp) -> PhysicalSize<u32> {
+//     if let Some(native_window) = app.native_window() {
+//         PhysicalSize::new(native_window.width() as _, native_window.height() as _)
+//     } else {
+//         PhysicalSize::new(0, 0)
+//     }
+// }
 
-fn scale_factor(app: &AndroidApp) -> f64 {
-    app.config().density().map(|dpi| dpi as f64 / 160.0).unwrap_or(1.0)
-}
+// fn scale_factor(app: &AndroidApp) -> f64 {
+//     app.config().density().map(|dpi| dpi as f64 / 160.0).unwrap_or(1.0)
+// }

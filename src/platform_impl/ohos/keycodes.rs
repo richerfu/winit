@@ -1,4 +1,4 @@
-use openharmony_ability::xcomponent::{KeyCode as Keycode,Action as KeyAction};
+use openharmony_ability::{xcomponent::{Action as KeyAction, KeyCode as Keycode}, OpenHarmonyApp};
 
 use crate::keyboard::{Key, KeyCode, KeyLocation, NamedKey, NativeKey, NativeKeyCode, PhysicalKey};
 
@@ -163,7 +163,7 @@ pub fn to_physical_key(keycode: Keycode) -> PhysicalKey {
 /// uses that to try and map the `key_code` + `meta_state` to a unicode
 /// character or a dead key that can be combined with the next key press.
 pub fn character_map_and_combine_key(
-    app: &AndroidApp,
+    app: &OpenHarmonyApp,
     key_event: &KeyEvent<'_>,
     combining_accent: &mut Option<char>,
 ) -> Option<KeyMapChar> {
