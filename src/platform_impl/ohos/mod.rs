@@ -267,8 +267,6 @@ impl EventLoop {
         trace!("Mainloop iteration");
 
         let cause = self.cause;
-        let mut resized = false;
-        let mut pending_redraw = false;
 
         app.new_events(&self.window_target, cause);
 
@@ -282,8 +280,20 @@ impl EventLoop {
                 MainEvent::SurfaceDestroy { .. } => {
                     app.destroy_surfaces(&self.window_target);
                 },
-                MainEvent::WindowResize { .. } => {},
-                MainEvent::WindowRedraw { .. } => {},
+                MainEvent::WindowResize { .. } => {
+                    let win = self.openharmony_app.native_window();
+                    let size = if let Some(win) = win {
+                        PhysicalSize::new(win.width() as _, win.height() as _)
+                    } else {
+                        PhysicalSize::new(0, 0)
+                    };
+                    let event = event::WindowEvent::SurfaceResized(size);
+                    app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                },
+                MainEvent::WindowRedraw { .. } => {
+                    let event = event::WindowEvent::RedrawRequested;
+                    app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                },
                 MainEvent::ContentRectChange { .. } => {
                     warn!("TODO: find a way to notify application of content rect change");
                 },
@@ -298,20 +308,21 @@ impl EventLoop {
                     app.window_event(&self.window_target, GLOBAL_WINDOW, event);
                 },
                 MainEvent::ConfigChanged { .. } => {
-                    // let old_scale_factor = scale_factor(&self.openharmony_app);
-                    // let scale_factor = scale_factor(&self.openharmony_app);
-                    // if (scale_factor - old_scale_factor).abs() < f64::EPSILON {
-                    //     let new_surface_size =
-                    //         Arc::new(Mutex::new(screen_size(&self.openharmony_app)));
-                    //     let event = event::WindowEvent::ScaleFactorChanged {
-                    //         surface_size_writer: SurfaceSizeWriter::new(Arc::downgrade(
-                    //             &new_surface_size,
-                    //         )),
-                    //         scale_factor,
-                    //     };
-
-                    //     app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-                    // }
+                    let win = self.openharmony_app.native_window();
+                    if let Some(win) = win {
+                        let scale = self.openharmony_app.scale();
+                        let width = win.width();
+                        let height = win.height();
+                        let new_surface_size =
+                            Arc::new(Mutex::new(PhysicalSize::new(width as _, height as _)));
+                        let event = event::WindowEvent::ScaleFactorChanged {
+                            surface_size_writer: SurfaceSizeWriter::new(Arc::downgrade(
+                                &new_surface_size,
+                            )),
+                            scale_factor: scale as _,
+                        };
+                        app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                    }
                 },
                 MainEvent::LowMemory => {
                     app.memory_warning(&self.window_target);
@@ -343,7 +354,8 @@ impl EventLoop {
                     warn!("TODO: forward onDestroy notification to application");
                 },
                 MainEvent::Input(_) => {
-                    let openharmony_app = self.openharmony_app.clone();
+                    warn!("TODO: forward onDestroy notification to application");
+                    // let openharmony_app = self.openharmony_app.clone();
                     // self.handle_input_event(openharmony_app, event, app)
                 },
                 unknown => {
