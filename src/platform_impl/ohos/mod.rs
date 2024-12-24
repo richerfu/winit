@@ -793,15 +793,3 @@ impl VideoModeHandle {
         unreachable!()
     }
 }
-
-// fn screen_size(app: &AndroidApp) -> PhysicalSize<u32> {
-//     if let Some(native_window) = app.native_window() {
-//         PhysicalSize::new(native_window.width() as _, native_window.height() as _)
-//     } else {
-//         PhysicalSize::new(0, 0)
-//     }
-// }
-
-// fn scale_factor(app: &AndroidApp) -> f64 {
-//     app.config().density().map(|dpi| dpi as f64 / 160.0).unwrap_or(1.0)
-// }
