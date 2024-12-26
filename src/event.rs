@@ -153,10 +153,16 @@ pub enum WindowEvent {
     /// Contains the new dimensions of the surface (can also be retrieved with
     /// [`Window::surface_size`]).
     ///
+    /// This event will not necessarily be emitted upon window creation, query
+    /// [`Window::surface_size`] if you need to determine the surface's initial size.
+    ///
     /// [`Window::surface_size`]: crate::window::Window::surface_size
     SurfaceResized(PhysicalSize<u32>),
 
-    /// The position of the window has changed. Contains the window's new position.
+    /// The position of the window has changed.
+    ///
+    /// Contains the window's new position in desktop coordinates (can also be retrieved with
+    /// [`Window::outer_position`]).
     ///
     /// ## Platform-specific
     ///
@@ -169,17 +175,22 @@ pub enum WindowEvent {
     /// The window has been destroyed.
     Destroyed,
 
-    /// A file has been dropped into the window.
-    ///
-    /// When the user drops multiple files at once, this event will be emitted for each file
-    /// separately.
-    DroppedFile(PathBuf),
-
     /// A file is being hovered over the window.
     ///
     /// When the user hovers multiple files at once, this event will be emitted for each file
     /// separately.
     HoveredFile(PathBuf),
+
+    /// A file has been dropped into the window.
+    ///
+    /// When the user drops multiple files at once, this event will be emitted for each file
+    /// separately.
+    ///
+    /// The support for this is known to be incomplete, see [#720] for more
+    /// information.
+    ///
+    /// [#720]: https://github.com/rust-windowing/winit/issues/720
+    DroppedFile(PathBuf),
 
     /// A file was hovered, but has exited the window.
     ///
@@ -190,6 +201,9 @@ pub enum WindowEvent {
     /// The window gained or lost focus.
     ///
     /// The parameter is true if the window has gained focus, and false if it has lost focus.
+    ///
+    /// Windows are unfocused upon creation, but will usually be focused by the system soon
+    /// afterwards.
     Focused(bool),
 
     /// An event from the keyboard has been received.
@@ -198,6 +212,7 @@ pub enum WindowEvent {
     /// - **Windows:** The shift key overrides NumLock. In other words, while shift is held down,
     ///   numpad keys act as if NumLock wasn't active. When this is used, the OS sends fake key
     ///   events which are not marked as `is_synthetic`.
+    /// - **iOS:** Unsupported.
     KeyboardInput {
         device_id: Option<DeviceId>,
         event: KeyEvent,
@@ -245,6 +260,12 @@ pub enum WindowEvent {
         /// [`transform`]: https://developer.mozilla.org/en-US/docs/Web/CSS/transform
         position: PhysicalPosition<f64>,
 
+        /// Indicates whether the event is created by a primary pointer.
+        ///
+        /// A pointer is considered primary when it's a mouse, the first finger in a multi-touch
+        /// interaction, or an unknown pointer source.
+        primary: bool,
+
         source: PointerSource,
     },
 
@@ -263,6 +284,12 @@ pub enum WindowEvent {
         /// [`padding`]: https://developer.mozilla.org/en-US/docs/Web/CSS/padding
         /// [`transform`]: https://developer.mozilla.org/en-US/docs/Web/CSS/transform
         position: PhysicalPosition<f64>,
+
+        /// Indicates whether the event is created by a primary pointer.
+        ///
+        /// A pointer is considered primary when it's a mouse, the first finger in a multi-touch
+        /// interaction, or an unknown pointer source.
+        primary: bool,
 
         kind: PointerKind,
     },
@@ -283,6 +310,12 @@ pub enum WindowEvent {
         /// [`padding`]: https://developer.mozilla.org/en-US/docs/Web/CSS/padding
         /// [`transform`]: https://developer.mozilla.org/en-US/docs/Web/CSS/transform
         position: Option<PhysicalPosition<f64>>,
+
+        /// Indicates whether the event is created by a primary pointer.
+        ///
+        /// A pointer is considered primary when it's a mouse, the first finger in a multi-touch
+        /// interaction, or an unknown pointer source.
+        primary: bool,
 
         kind: PointerKind,
     },
@@ -306,6 +339,12 @@ pub enum WindowEvent {
         /// [`padding`]: https://developer.mozilla.org/en-US/docs/Web/CSS/padding
         /// [`transform`]: https://developer.mozilla.org/en-US/docs/Web/CSS/transform
         position: PhysicalPosition<f64>,
+
+        /// Indicates whether the event is created by a primary pointer.
+        ///
+        /// A pointer is considered primary when it's a mouse, the first finger in a multi-touch
+        /// interaction, or an unknown pointer source.
+        primary: bool,
 
         button: ButtonSource,
     },
@@ -377,10 +416,18 @@ pub enum WindowEvent {
 
     /// Touchpad pressure event.
     ///
-    /// At the moment, only supported on Apple forcetouch-capable macbooks.
-    /// The parameters are: pressure level (value between 0 and 1 representing how hard the
-    /// touchpad is being pressed) and stage (integer representing the click level).
-    TouchpadPressure { device_id: Option<DeviceId>, pressure: f32, stage: i64 },
+    /// ## Platform-specific
+    ///
+    /// - **macOS**: Only supported on Apple forcetouch-capable macbooks.
+    /// - **Android / iOS / Wayland / X11 / Windows / Orbital / Web:** Unsupported.
+    TouchpadPressure {
+        device_id: Option<DeviceId>,
+        /// Value between 0 and 1 representing how hard the touchpad is being
+        /// pressed.
+        pressure: f32,
+        /// Represents the click level.
+        stage: i64,
+    },
 
     /// The window's scale factor has changed.
     ///
@@ -393,7 +440,12 @@ pub enum WindowEvent {
     /// To update the window size, use the provided [`SurfaceSizeWriter`] handle. By default, the
     /// window is resized to the value suggested by the OS, but it can be changed to any value.
     ///
+    /// This event will not necessarily be emitted upon window creation, query
+    /// [`Window::scale_factor`] if you need to determine the window's initial scale factor.
+    ///
     /// For more information about DPI in general, see the [`dpi`] crate.
+    ///
+    /// [`Window::scale_factor`]: crate::window::Window::scale_factor
     ScaleFactorChanged {
         scale_factor: f64,
         /// Handle to update surface size during scale changes.
@@ -445,13 +497,15 @@ pub enum WindowEvent {
 
     /// Emitted when a window should be redrawn.
     ///
-    /// This gets triggered in two scenarios:
+    /// This gets triggered in a few scenarios:
     /// - The OS has performed an operation that's invalidated the window's contents (such as
-    ///   resizing the window).
+    ///   resizing the window, or changing [the safe area]).
     /// - The application has explicitly requested a redraw via [`Window::request_redraw`].
     ///
     /// Winit will aggregate duplicate redraw requests into a single event, to
     /// help avoid duplicating rendering work.
+    ///
+    /// [the safe area]: crate::window::Window::safe_area
     RedrawRequested,
 }
 
@@ -610,12 +664,23 @@ impl DeviceId {
 /// Whenever a touch event is received it contains a `FingerId` which uniquely identifies the finger
 /// used for the current interaction.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FingerId(pub(crate) platform_impl::FingerId);
+pub struct FingerId(pub(crate) usize);
 
 impl FingerId {
-    #[cfg(test)]
-    pub(crate) const fn dummy() -> Self {
-        FingerId(platform_impl::FingerId::dummy())
+    /// Convert the [`FingerId`] into the underlying integer.
+    ///
+    /// This is useful if you need to pass the ID across an FFI boundary, or store it in an atomic.
+    #[allow(dead_code)]
+    pub(crate) const fn into_raw(self) -> usize {
+        self.0
+    }
+
+    /// Construct a [`FingerId`] from the underlying integer.
+    ///
+    /// This should only be called with integers returned from [`FingerId::into_raw`].
+    #[allow(dead_code)]
+    pub(crate) const fn from_raw(id: usize) -> Self {
+        Self(id)
     }
 }
 
@@ -1130,7 +1195,7 @@ mod tests {
         ($closure:expr) => {{
             #[allow(unused_mut)]
             let mut x = $closure;
-            let fid = event::FingerId::dummy();
+            let fid = event::FingerId::from_raw(0);
 
             #[allow(deprecated)]
             {
@@ -1162,16 +1227,19 @@ mod tests {
                 with_window_event(Ime(Enabled));
                 with_window_event(PointerMoved {
                     device_id: None,
+                    primary: true,
                     position: (0, 0).into(),
                     source: PointerSource::Mouse,
                 });
                 with_window_event(ModifiersChanged(event::Modifiers::default()));
                 with_window_event(PointerEntered {
                     device_id: None,
+                    primary: true,
                     position: (0, 0).into(),
                     kind: PointerKind::Mouse,
                 });
                 with_window_event(PointerLeft {
+                    primary: true,
                     device_id: None,
                     position: Some((0, 0).into()),
                     kind: PointerKind::Mouse,
@@ -1183,12 +1251,14 @@ mod tests {
                 });
                 with_window_event(PointerButton {
                     device_id: None,
+                    primary: true,
                     state: event::ElementState::Pressed,
                     position: (0, 0).into(),
                     button: event::MouseButton::Other(0).into(),
                 });
                 with_window_event(PointerButton {
                     device_id: None,
+                    primary: true,
                     state: event::ElementState::Released,
                     position: (0, 0).into(),
                     button: event::ButtonSource::Touch {
@@ -1258,11 +1328,11 @@ mod tests {
     #[test]
     fn ensure_attrs_do_not_panic() {
         foreach_event!(|event: event::Event| {
-            let _ = format!("{:?}", event);
+            let _ = format!("{event:?}");
         });
         let _ = event::StartCause::Init.clone();
 
-        let fid = crate::event::FingerId::dummy().clone();
+        let fid = crate::event::FingerId::from_raw(0).clone();
         HashSet::new().insert(fid);
         let mut set = [fid, fid, fid];
         set.sort_unstable();

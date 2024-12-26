@@ -97,7 +97,7 @@ impl KeyEventBuilder {
                     MatchResult::MessagesToDispatch(self.pending.complete_multi(key_events))
                 },
                 WM_KILLFOCUS => {
-                    // sythesize keyup events
+                    // synthesize keyup events
                     let kbd_state = get_kbd_state();
                     let key_events = Self::synthesize_kbd_state(ElementState::Released, &kbd_state);
                     MatchResult::MessagesToDispatch(self.pending.complete_multi(key_events))
@@ -333,11 +333,11 @@ impl KeyEventBuilder {
         // We are synthesizing the press event for caps-lock first for the following reasons:
         // 1. If caps-lock is *not* held down but *is* active, then we have to synthesize all
         //    printable keys, respecting the caps-lock state.
-        // 2. If caps-lock is held down, we could choose to sythesize its keypress after every other
-        //    key, in which case all other keys *must* be sythesized as if the caps-lock state was
-        //    be the opposite of what it currently is.
+        // 2. If caps-lock is held down, we could choose to synthesize its keypress after every
+        //    other key, in which case all other keys *must* be sythesized as if the caps-lock state
+        //    was be the opposite of what it currently is.
         // --
-        // For the sake of simplicity we are choosing to always sythesize
+        // For the sake of simplicity we are choosing to always synthesize
         // caps-lock first, and always use the current caps-lock state
         // to determine the produced text
         if is_key_pressed!(VK_CAPITAL) {
@@ -1079,6 +1079,20 @@ pub(crate) fn physicalkey_to_scancode(physical_key: PhysicalKey) -> Option<u32> 
         KeyCode::AudioVolumeDown => Some(0xe02e),
         KeyCode::AudioVolumeMute => Some(0xe020),
         KeyCode::AudioVolumeUp => Some(0xe030),
+
+        // Extra from Chromium sources:
+        // https://chromium.googlesource.com/chromium/src.git/+/3e1a26c44c024d97dc9a4c09bbc6a2365398ca2c/ui/events/keycodes/dom/dom_code_data.inc
+        KeyCode::Lang4 => Some(0x0077),
+        KeyCode::Lang3 => Some(0x0078),
+        KeyCode::Undo => Some(0xe008),
+        KeyCode::Paste => Some(0xe00a),
+        KeyCode::Cut => Some(0xe017),
+        KeyCode::Copy => Some(0xe018),
+        KeyCode::Eject => Some(0xe02c),
+        KeyCode::Help => Some(0xe03b),
+        KeyCode::Sleep => Some(0xe05f),
+        KeyCode::WakeUp => Some(0xe063),
+
         _ => None,
     }
 }
@@ -1238,6 +1252,20 @@ pub(crate) fn scancode_to_physicalkey(scancode: u32) -> PhysicalKey {
         0xe02e => KeyCode::AudioVolumeDown,
         0xe020 => KeyCode::AudioVolumeMute,
         0xe030 => KeyCode::AudioVolumeUp,
+
+        // Extra from Chromium sources:
+        // https://chromium.googlesource.com/chromium/src.git/+/3e1a26c44c024d97dc9a4c09bbc6a2365398ca2c/ui/events/keycodes/dom/dom_code_data.inc
+        0x0077 => KeyCode::Lang4,
+        0x0078 => KeyCode::Lang3,
+        0xe008 => KeyCode::Undo,
+        0xe00a => KeyCode::Paste,
+        0xe017 => KeyCode::Cut,
+        0xe018 => KeyCode::Copy,
+        0xe02c => KeyCode::Eject,
+        0xe03b => KeyCode::Help,
+        0xe05f => KeyCode::Sleep,
+        0xe063 => KeyCode::WakeUp,
+
         _ => return PhysicalKey::Unidentified(NativeKeyCode::Windows(scancode as u16)),
     })
 }

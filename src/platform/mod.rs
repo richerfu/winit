@@ -23,6 +23,7 @@ pub mod x11;
 #[cfg(any(ohos_platform, docsrs))]
 pub mod ohos;
 
+#[allow(unused_imports)]
 #[cfg(any(
     windows_platform,
     macos_platform,

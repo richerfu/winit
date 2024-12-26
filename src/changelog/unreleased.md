@@ -59,13 +59,18 @@ changelog entry.
 - Implement `Clone`, `Copy`, `Debug`, `Deserialize`, `Eq`, `Hash`, `Ord`, `PartialEq`, `PartialOrd`
   and `Serialize` on many types.
 - Add `MonitorHandle::current_video_mode()`.
-- Add basic iOS IME support. The soft keyboard can now be shown using `Window::set_ime_allowed`.
-- On macOS, add `WindowExtMacOS::set_borderless_game` and `WindowAttributesExtMacOS::with_borderless_game`
-  to fully disable the menu bar and dock in Borderless Fullscreen as commonly done in games.
+- Add `ApplicationHandlerExtMacOS` trait, and a `macos_handler` method to `ApplicationHandler` which returns a `dyn ApplicationHandlerExtMacOS` which allows for macOS specific extensions to winit.
+- Add a `standard_key_binding` method to the `ApplicationHandlerExtMacOS` trait. This allows handling of standard keybindings such as "go to end of line" on macOS.
+- On macOS, add `WindowExtMacOS::set_unified_titlebar` and `WindowAttributesExtMacOS::with_unified_titlebar`
+  to use a larger style of titlebar.
 - Add `WindowId::into_raw()` and `from_raw()`.
-- Add `PointerKind`, `PointerSource`, `ButtonSource`, `FingerId` and `position` to all pointer
-  events as part of the pointer event overhaul.
+- Add `PointerKind`, `PointerSource`, `ButtonSource`, `FingerId`, `primary` and `position` to all
+  pointer events as part of the pointer event overhaul.
 - Add `DeviceId::into_raw()` and `from_raw()`.
+- Added `Window::surface_position`, which is the position of the surface inside the window.
+- Added `Window::safe_area`, which describes the area of the surface that is unobstructed.
+- On X11, Wayland, Windows and macOS, improved scancode conversions for more obscure key codes.
+- Add ability to make non-activating window on macOS using `NSPanel` with `NSWindowStyleMask::NonactivatingPanel`.
 
 ### Changed
 
@@ -134,6 +139,8 @@ changelog entry.
   - Rename `CursorEntered` to `PointerEntered`.
   - Rename `CursorLeft` to `PointerLeft`.
   - Rename `MouseInput` to `PointerButton`.
+  - Add `primary` to every `PointerEvent` as a way to identify discard non-primary pointers in a
+    multi-touch interaction.
   - Add `position` to every `PointerEvent`.
   - `PointerMoved` is **not sent** after `PointerEntered` anymore.
   - Remove `Touch`, which is folded into the `Pointer*` events.
@@ -146,10 +153,13 @@ changelog entry.
     type to a generic mouse button.
   - New `FingerId` added to `PointerKind::Touch` and `PointerSource::Touch` able to uniquely
     identify a finger in a multi-touch interaction. Replaces the old `Touch::id`.
-  - On Web and Windows, add `FingerIdExt*::is_primary()`, exposing a way to determine
-    the primary finger in a multi-touch interaction.
   - In the same spirit rename `DeviceEvent::MouseMotion` to `PointerMotion`.
   - Remove `Force::Calibrated::altitude_angle`.
+- On X11, use bottom-right corner for IME hotspot in `Window::set_ime_cursor_area`.
+- On macOS and iOS, no longer emit `ScaleFactorChanged` upon window creation.
+- On macOS, no longer emit `Focused` upon window creation.
+- On iOS, emit more events immediately, instead of queuing them.
+- Update `smol_str` to version `0.3`
 
 ### Removed
 
@@ -181,11 +191,13 @@ changelog entry.
 - Remove `WindowEvent::Touch` and `Touch` in favor of the new `PointerKind`, `PointerSource` and
  `ButtonSource` as part of the new pointer event overhaul.
 - Remove `Force::altitude_angle`.
+- Removed `Window::inner_position`, use the new `Window::surface_position` instead.
 
 ### Fixed
 
 - On Orbital, `MonitorHandle::name()` now returns `None` instead of a dummy name.
-- On macOS, fix `WindowEvent::Moved` sometimes being triggered unnecessarily on resize.
-- On MacOS, package manifest definitions of `LSUIElement` will no longer be overridden with the
-  default activation policy, unless explicitly provided during initialization.
-- On X11, key events forward to IME anyway, even when it's disabled.
+- On iOS, fixed `SurfaceResized` and `Window::surface_size` not reporting the size of the actual surface.
+- On macOS, fixed the scancode conversion for audio volume keys.
+- On macOS, fixed the scancode conversion for `IntlBackslash`.
+- On macOS, fixed redundant `SurfaceResized` event at window creation.
+- On Windows, fixed the event loop not waking on accessibility requests.
