@@ -1,4 +1,3 @@
-use std::borrow::{Borrow, BorrowMut};
 use std::cell::Cell;
 use std::hash::Hash;
 use std::num::{NonZeroU16, NonZeroU32};
@@ -7,10 +6,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
+use openharmony_ability::xcomponent::{Action, KeyCode, TouchEvent};
 use tracing::{debug, trace, warn};
 
 use openharmony_ability::{
-    Configuration, Event as MainEvent, OpenHarmonyApp, OpenHarmonyWaker, Rect,
+    Configuration, Event as MainEvent, InputEvent, OpenHarmonyApp, OpenHarmonyWaker, Rect,
 };
 
 use crate::application::ApplicationHandler;
@@ -29,7 +29,7 @@ use crate::window::{
     WindowLevel,
 };
 
-// mod keycodes;
+mod keycodes;
 
 pub(crate) use crate::cursor::{
     NoCustomCursor as PlatformCustomCursor, NoCustomCursor as PlatformCustomCursorSource,
@@ -91,179 +91,159 @@ impl EventLoop {
         &self.window_target
     }
 
-    // fn handle_input_event<A: ApplicationHandler>(
-    //     &mut self,
-    //     android_app: &AndroidApp,
-    //     event: &InputEvent<'_>,
-    //     app: &mut A,
-    // ) -> InputStatus {
-    //     let mut input_status = InputStatus::Handled;
-    //     match event {
-    //         InputEvent::MotionEvent(motion_event) => {
-    //             let device_id = Some(DeviceId::from_raw(motion_event.device_id() as i64));
-    //             let action = motion_event.action();
+    fn handle_input_event<A: ApplicationHandler>(
+        &mut self,
+        openharmony_app: &OpenHarmonyApp,
+        event: &InputEvent,
+        app: &mut A,
+    ) {
+        match event {
+            InputEvent::TouchEvent(motion_event) => {
+                let device_id = Some(DeviceId::from_raw(motion_event.device_id));
+                let action = motion_event.event_type;
 
-    //             let pointers: Option<
-    //                 Box<dyn Iterator<Item = openharmony_ability::input::Pointer<'_>>>,
-    //             > = match action {
-    //                 MotionAction::Down
-    //                 | MotionAction::PointerDown
-    //                 | MotionAction::Up
-    //                 | MotionAction::PointerUp => Some(Box::new(std::iter::once(
-    //                     motion_event.pointer_at_index(motion_event.pointer_index()),
-    //                 ))),
-    //                 MotionAction::Move | MotionAction::Cancel => {
-    //                     Some(Box::new(motion_event.pointers()))
-    //                 },
-    //                 // TODO mouse events
-    //                 _ => None,
-    //             };
+                for pointer in motion_event.touch_points.iter() {
+                    // TODO
+                    let tool_type = "unknown";
+                    let position = PhysicalPosition { x: pointer.x as _, y: pointer.y as _ };
+                    trace!(
+                        "Input event {device_id:?}, {action:?}, loc={position:?}, \
+                             pointer={pointer:?}, tool_type={tool_type:?}"
+                    );
+                    let finger_id = event::FingerId(FingerId(pointer.id));
+                    let force = Some(Force::Normalized(pointer.force as f64));
 
-    //             if let Some(pointers) = pointers {
-    //                 for pointer in pointers {
-    //                     let tool_type = pointer.tool_type();
-    //                     let position =
-    //                         PhysicalPosition { x: pointer.x() as _, y: pointer.y() as _ };
-    //                     trace!(
-    //                         "Input event {device_id:?}, {action:?}, loc={position:?}, \
-    //                          pointer={pointer:?}, tool_type={tool_type:?}"
-    //                     );
-    //                     let finger_id = event::FingerId(FingerId(pointer.pointer_id()));
-    //                     let force = Some(Force::Normalized(pointer.pressure() as f64));
+                    match action {
+                        TouchEvent::Down => {
+                            let event = event::WindowEvent::PointerEntered {
+                                device_id,
+                                position,
+                                kind: match tool_type {
+                                    // TODO
+                                    // android_activity::input::ToolType::Finger => {
+                                    //     event::PointerKind::Touch(finger_id)
+                                    // },
+                                    // // TODO mouse events
+                                    // android_activity::input::ToolType::Mouse => continue,
+                                    _ => event::PointerKind::Unknown,
+                                },
+                            };
+                            app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                            let event = event::WindowEvent::PointerButton {
+                                device_id,
+                                state: event::ElementState::Pressed,
+                                position,
+                                button: match tool_type {
+                                    // TODO
+                                    // android_activity::input::ToolType::Finger => {
+                                    //     event::ButtonSource::Touch { finger_id, force }
+                                    // },
+                                    // // TODO mouse events
+                                    // android_activity::input::ToolType::Mouse => continue,
+                                    _ => event::ButtonSource::Unknown(0),
+                                },
+                            };
+                            app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                        },
+                        TouchEvent::Move => {
+                            let event = event::WindowEvent::PointerMoved {
+                                device_id,
+                                position,
+                                source: match tool_type {
+                                    // TODO
+                                    // android_activity::input::ToolType::Finger => {
+                                    //     event::PointerSource::Touch { finger_id, force }
+                                    // },
+                                    // // TODO mouse events
+                                    // android_activity::input::ToolType::Mouse => continue,
+                                    _ => event::PointerSource::Unknown,
+                                },
+                            };
+                            app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                        },
+                        TouchEvent::Up | TouchEvent::Cancel => {
+                            if let TouchEvent::Up = action {
+                                let event = event::WindowEvent::PointerButton {
+                                    device_id,
+                                    state: event::ElementState::Released,
+                                    position,
+                                    button: match tool_type {
+                                        //
+                                        // android_activity::input::ToolType::Finger => {
+                                        //     event::ButtonSource::Touch { finger_id, force }
+                                        // },
+                                        // // TODO mouse events
+                                        // android_activity::input::ToolType::Mouse => continue,
+                                        _ => event::ButtonSource::Unknown(0),
+                                    },
+                                };
+                                app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                            }
 
-    //                     match action {
-    //                         MotionAction::Down | MotionAction::PointerDown => {
-    //                             let event = event::WindowEvent::PointerEntered {
-    //                                 device_id,
-    //                                 position,
-    //                                 kind: match tool_type {
-    //                                     android_activity::input::ToolType::Finger => {
-    //                                         event::PointerKind::Touch(finger_id)
-    //                                     },
-    //                                     // TODO mouse events
-    //                                     android_activity::input::ToolType::Mouse => continue,
-    //                                     _ => event::PointerKind::Unknown,
-    //                                 },
-    //                             };
-    //                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-    //                             let event = event::WindowEvent::PointerButton {
-    //                                 device_id,
-    //                                 state: event::ElementState::Pressed,
-    //                                 position,
-    //                                 button: match tool_type {
-    //                                     android_activity::input::ToolType::Finger => {
-    //                                         event::ButtonSource::Touch { finger_id, force }
-    //                                     },
-    //                                     // TODO mouse events
-    //                                     android_activity::input::ToolType::Mouse => continue,
-    //                                     _ => event::ButtonSource::Unknown(0),
-    //                                 },
-    //                             };
-    //                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-    //                         },
-    //                         MotionAction::Move => {
-    //                             let event = event::WindowEvent::PointerMoved {
-    //                                 device_id,
-    //                                 position,
-    //                                 source: match tool_type {
-    //                                     android_activity::input::ToolType::Finger => {
-    //                                         event::PointerSource::Touch { finger_id, force }
-    //                                     },
-    //                                     // TODO mouse events
-    //                                     android_activity::input::ToolType::Mouse => continue,
-    //                                     _ => event::PointerSource::Unknown,
-    //                                 },
-    //                             };
-    //                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-    //                         },
-    //                         MotionAction::Up | MotionAction::PointerUp | MotionAction::Cancel => {
-    //                             if let MotionAction::Up | MotionAction::PointerUp = action {
-    //                                 let event = event::WindowEvent::PointerButton {
-    //                                     device_id,
-    //                                     state: event::ElementState::Released,
-    //                                     position,
-    //                                     button: match tool_type {
-    //                                         android_activity::input::ToolType::Finger => {
-    //                                             event::ButtonSource::Touch { finger_id, force }
-    //                                         },
-    //                                         // TODO mouse events
-    //                                         android_activity::input::ToolType::Mouse => continue,
-    //                                         _ => event::ButtonSource::Unknown(0),
-    //                                     },
-    //                                 };
-    //                                 app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-    //                             }
+                            let event = event::WindowEvent::PointerLeft {
+                                device_id,
+                                position: Some(position),
+                                kind: match tool_type {
+                                    // TODO
+                                    // android_activity::input::ToolType::Finger => {
+                                    //     event::PointerKind::Touch(finger_id)
+                                    // },
+                                    // // TODO mouse events
+                                    // android_activity::input::ToolType::Mouse => continue,
+                                    _ => event::PointerKind::Unknown,
+                                },
+                            };
+                            app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+            },
+            InputEvent::KeyEvent(key) => {
+                match key.code {
+                    // Flag keys related to volume as unhandled. While winit does not have a way for
+                    // applications to configure what keys to flag as handled,
+                    // this appears to be a good default until winit
+                    // can be configured.
+                    // TODO
+                    // KeyCode::VolumeUp | KeyCode::VolumeDown | KeyCode::VolumeMute
+                    //     if self.ignore_volume_keys =>
+                    // {
+                    //     input_status = InputStatus::Unhandled
+                    // },
+                    keycode => {
+                        let state = match key.action {
+                            Action::Down => event::ElementState::Pressed,
+                            Action::Up => event::ElementState::Released,
+                            _ => event::ElementState::Released,
+                        };
 
-    //                             let event = event::WindowEvent::PointerLeft {
-    //                                 device_id,
-    //                                 position: Some(position),
-    //                                 kind: match tool_type {
-    //                                     android_activity::input::ToolType::Finger => {
-    //                                         event::PointerKind::Touch(finger_id)
-    //                                     },
-    //                                     // TODO mouse events
-    //                                     android_activity::input::ToolType::Mouse => continue,
-    //                                     _ => event::PointerKind::Unknown,
-    //                                 },
-    //                             };
-    //                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-    //                         },
-    //                         _ => unreachable!(),
-    //                     }
-    //                 }
-    //             }
-    //         },
-    //         InputEvent::KeyEvent(key) => {
-    //             match key.key_code() {
-    //                 // Flag keys related to volume as unhandled. While winit does not have a way for
-    //                 // applications to configure what keys to flag as handled,
-    //                 // this appears to be a good default until winit
-    //                 // can be configured.
-    //                 Keycode::VolumeUp | Keycode::VolumeDown | Keycode::VolumeMute
-    //                     if self.ignore_volume_keys =>
-    //                 {
-    //                     input_status = InputStatus::Unhandled
-    //                 },
-    //                 keycode => {
-    //                     let state = match key.action() {
-    //                         KeyAction::Down => event::ElementState::Pressed,
-    //                         KeyAction::Up => event::ElementState::Released,
-    //                         _ => event::ElementState::Released,
-    //                     };
+                        let event = event::WindowEvent::KeyboardInput {
+                            device_id: Some(DeviceId::from_raw(key.device_id as i64)),
+                            event: event::KeyEvent {
+                                state,
+                                physical_key: keycodes::to_physical_key(keycode),
+                                logical_key: keycodes::to_logical(keycode),
+                                location: keycodes::to_location(keycode),
+                                // TODO
+                                repeat: false,
+                                text: None,
+                                platform_specific: KeyEventExtra {},
+                            },
+                            is_synthetic: false,
+                        };
 
-    //                     let key_char = keycodes::character_map_and_combine_key(
-    //                         android_app,
-    //                         key,
-    //                         &mut self.combining_accent,
-    //                     );
+                        app.window_event(&self.window_target, GLOBAL_WINDOW, event);
+                    },
+                }
+            },
+            _ => {
+                warn!("Unknown openharmony_ability input event {event:?}")
+            },
+        }
+    }
 
-    //                     let event = event::WindowEvent::KeyboardInput {
-    //                         device_id: Some(DeviceId::from_raw(key.device_id() as i64)),
-    //                         event: event::KeyEvent {
-    //                             state,
-    //                             physical_key: keycodes::to_physical_key(keycode),
-    //                             logical_key: keycodes::to_logical(key_char, keycode),
-    //                             location: keycodes::to_location(keycode),
-    //                             repeat: key.repeat_count() > 0,
-    //                             text: None,
-    //                             platform_specific: KeyEventExtra {},
-    //                         },
-    //                         is_synthetic: false,
-    //                     };
-
-    //                     app.window_event(&self.window_target, GLOBAL_WINDOW, event);
-    //                 },
-    //             }
-    //         },
-    //         _ => {
-    //             warn!("Unknown android_activity input event {event:?}")
-    //         },
-    //     }
-
-    //     input_status
-    // }
-
-    pub fn run_app<A: ApplicationHandler>(self, mut app: A) -> Result<(), EventLoopError> {
+    pub fn run_app<A: ApplicationHandler>(mut self, mut app: A) -> Result<(), EventLoopError> {
         trace!("Mainloop iteration");
 
         let cause = self.cause;
@@ -271,6 +251,7 @@ impl EventLoop {
         app.new_events(&self.window_target, cause);
 
         let openharmony_app = self.openharmony_app.clone();
+        let input_app = self.openharmony_app.clone();
 
         openharmony_app.run_loop(|event| {
             match event {
@@ -353,10 +334,10 @@ impl EventLoop {
                     // killed by the OS?
                     warn!("TODO: forward onDestroy notification to application");
                 },
-                MainEvent::Input(_) => {
+                MainEvent::Input(e) => {
                     warn!("TODO: forward onDestroy notification to application");
                     // let openharmony_app = self.openharmony_app.clone();
-                    // self.handle_input_event(openharmony_app, event, app)
+                    self.handle_input_event(&input_app, &e, &mut app)
                 },
                 unknown => {
                     trace!("Unknown MainEvent {unknown:?} (ignored)");
