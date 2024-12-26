@@ -15,12 +15,13 @@ use openharmony_ability::{
 
 use crate::application::ApplicationHandler;
 use crate::cursor::Cursor;
-use crate::dpi::{PhysicalPosition, PhysicalSize, Position, Size};
+use crate::dpi::{PhysicalInsets, PhysicalPosition, PhysicalSize, Position, Size};
 use crate::error::{EventLoopError, NotSupportedError, RequestError};
-use crate::event::{self, DeviceId, Force, StartCause, SurfaceSizeWriter};
+use crate::event::{self, DeviceId, FingerId, Force, StartCause, SurfaceSizeWriter};
 use crate::event_loop::{
     ActiveEventLoop as RootActiveEventLoop, ControlFlow, DeviceEvents,
-    EventLoopProxy as RootEventLoopProxy, OwnedDisplayHandle as RootOwnedDisplayHandle,
+    EventLoopProxy as CoreEventLoopProxy, EventLoopProxyProvider,
+    OwnedDisplayHandle as CoreOwnedDisplayHandle,
 };
 use crate::monitor::MonitorHandle as RootMonitorHandle;
 use crate::window::{
@@ -47,6 +48,7 @@ pub struct EventLoop {
     running: bool,
     cause: StartCause,
     combining_accent: Option<char>,
+    primary_pointer: Option<FingerId>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -67,12 +69,12 @@ impl EventLoop {
     pub(crate) fn new(
         attributes: &PlatformSpecificEventLoopAttributes,
     ) -> Result<Self, EventLoopError> {
-        let proxy_wake_up = Arc::new(AtomicBool::new(false));
-
         let openharmony_app = attributes.openharmony_app.as_ref().expect(
             "An `OpenHarmonyApp` as passed to lib is required to create an `EventLoop` on \
              OpenHarmony or HarmonyNext",
         );
+
+        let event_loop_proxy = Arc::new(EventLoopProxy::new(openharmony_app.create_waker()));
 
         Ok(Self {
             openharmony_app: openharmony_app.clone(),
@@ -80,10 +82,12 @@ impl EventLoop {
                 app: openharmony_app.clone(),
                 control_flow: Cell::new(ControlFlow::default()),
                 exit: Cell::new(false),
+                event_loop_proxy,
             },
             running: false,
             cause: StartCause::Init,
             combining_accent: None,
+            primary_pointer: None,
         })
     }
 
@@ -110,14 +114,19 @@ impl EventLoop {
                         "Input event {device_id:?}, {action:?}, loc={position:?}, \
                              pointer={pointer:?}, tool_type={tool_type:?}"
                     );
-                    let finger_id = event::FingerId(FingerId(pointer.id));
+                    let finger_id = FingerId::from_raw(pointer.id as usize);
                     let force = Some(Force::Normalized(pointer.force as f64));
 
                     match action {
                         TouchEvent::Down => {
+                            let primary = action == TouchEvent::Down;
+                            if primary {
+                                self.primary_pointer = Some(finger_id);
+                            }
                             let event = event::WindowEvent::PointerEntered {
                                 device_id,
                                 position,
+                                primary,
                                 kind: match tool_type {
                                     // TODO
                                     // android_activity::input::ToolType::Finger => {
@@ -133,6 +142,7 @@ impl EventLoop {
                                 device_id,
                                 state: event::ElementState::Pressed,
                                 position,
+                                primary,
                                 button: match tool_type {
                                     // TODO
                                     // android_activity::input::ToolType::Finger => {
@@ -146,9 +156,11 @@ impl EventLoop {
                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
                         },
                         TouchEvent::Move => {
+                            let primary = self.primary_pointer == Some(finger_id);
                             let event = event::WindowEvent::PointerMoved {
                                 device_id,
                                 position,
+                                primary,
                                 source: match tool_type {
                                     // TODO
                                     // android_activity::input::ToolType::Finger => {
@@ -162,11 +174,13 @@ impl EventLoop {
                             app.window_event(&self.window_target, GLOBAL_WINDOW, event);
                         },
                         TouchEvent::Up | TouchEvent::Cancel => {
+                            let primary = self.primary_pointer == Some(finger_id);
                             if let TouchEvent::Up = action {
                                 let event = event::WindowEvent::PointerButton {
                                     device_id,
                                     state: event::ElementState::Released,
                                     position,
+                                    primary,
                                     button: match tool_type {
                                         //
                                         // android_activity::input::ToolType::Finger => {
@@ -182,6 +196,7 @@ impl EventLoop {
 
                             let event = event::WindowEvent::PointerLeft {
                                 device_id,
+                                primary,
                                 position: Some(position),
                                 kind: match tool_type {
                                     // TODO
@@ -363,7 +378,13 @@ pub struct EventLoopProxy {
 }
 
 impl EventLoopProxy {
-    pub fn wake_up(&self) {
+    fn new(waker: OpenHarmonyWaker) -> Self {
+        Self { waker }
+    }
+}
+
+impl EventLoopProxyProvider for EventLoopProxy {
+    fn wake_up(&self) {
         self.waker.wake();
     }
 }
@@ -372,6 +393,7 @@ pub struct ActiveEventLoop {
     pub(crate) app: OpenHarmonyApp,
     control_flow: Cell<ControlFlow>,
     exit: Cell<bool>,
+    event_loop_proxy: Arc<EventLoopProxy>,
 }
 
 impl ActiveEventLoop {
@@ -381,9 +403,8 @@ impl ActiveEventLoop {
 }
 
 impl RootActiveEventLoop for ActiveEventLoop {
-    fn create_proxy(&self) -> RootEventLoopProxy {
-        let event_loop_proxy = EventLoopProxy { waker: self.app.create_waker() };
-        RootEventLoopProxy { event_loop_proxy }
+    fn create_proxy(&self) -> CoreEventLoopProxy {
+        CoreEventLoopProxy::new(self.event_loop_proxy.clone())
     }
 
     fn create_window(
@@ -430,17 +451,15 @@ impl RootActiveEventLoop for ActiveEventLoop {
         self.exit.get()
     }
 
-    fn owned_display_handle(&self) -> RootOwnedDisplayHandle {
-        RootOwnedDisplayHandle { platform: OwnedDisplayHandle }
+    fn owned_display_handle(&self) -> CoreOwnedDisplayHandle {
+        CoreOwnedDisplayHandle::new(Arc::new(OwnedDisplayHandle))
     }
 
-    #[cfg(feature = "rwh_06")]
     fn rwh_06_handle(&self) -> &dyn rwh_06::HasDisplayHandle {
         self
     }
 }
 
-#[cfg(feature = "rwh_06")]
 impl rwh_06::HasDisplayHandle for ActiveEventLoop {
     fn display_handle(&self) -> Result<rwh_06::DisplayHandle<'_>, rwh_06::HandleError> {
         let raw = rwh_06::OhosDisplayHandle::new();
@@ -451,26 +470,12 @@ impl rwh_06::HasDisplayHandle for ActiveEventLoop {
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct OwnedDisplayHandle;
 
-impl OwnedDisplayHandle {
-    #[cfg(feature = "rwh_06")]
-    #[inline]
-    pub fn raw_display_handle_rwh_06(
-        &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::OhosDisplayHandle::new().into())
+impl rwh_06::HasDisplayHandle for OwnedDisplayHandle {
+    fn display_handle(&self) -> Result<rwh_06::DisplayHandle<'_>, rwh_06::HandleError> {
+        let raw = rwh_06::OhosDisplayHandle::new();
+        Ok(unsafe { rwh_06::DisplayHandle::borrow_raw(raw.into()) })
     }
 }
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct FingerId(i32);
-
-impl FingerId {
-    #[cfg(test)]
-    pub const fn dummy() -> Self {
-        FingerId(0)
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct PlatformSpecificWindowAttributes;
 
@@ -496,7 +501,6 @@ impl Window {
         self.app.content_rect()
     }
 
-    #[cfg(feature = "rwh_06")]
     // Allow the usage of HasRawWindowHandle inside this function
     #[allow(deprecated)]
     fn raw_window_handle_rwh_06(&self) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
@@ -517,13 +521,11 @@ impl Window {
         }
     }
 
-    #[cfg(feature = "rwh_06")]
     fn raw_display_handle_rwh_06(&self) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
         Ok(rwh_06::RawDisplayHandle::Ohos(rwh_06::OhosDisplayHandle::new()))
     }
 }
 
-#[cfg(feature = "rwh_06")]
 impl rwh_06::HasDisplayHandle for Window {
     fn display_handle(&self) -> Result<rwh_06::DisplayHandle<'_>, rwh_06::HandleError> {
         let raw = self.raw_display_handle_rwh_06()?;
@@ -531,7 +533,6 @@ impl rwh_06::HasDisplayHandle for Window {
     }
 }
 
-#[cfg(feature = "rwh_06")]
 impl rwh_06::HasWindowHandle for Window {
     fn window_handle(&self) -> Result<rwh_06::WindowHandle<'_>, rwh_06::HandleError> {
         let raw = self.raw_window_handle_rwh_06()?;
@@ -549,6 +550,14 @@ impl CoreWindow for Window {
         1.0
     }
 
+    fn surface_position(&self) -> PhysicalPosition<i32> {
+        PhysicalPosition::new(0, 0)
+    }
+
+    fn safe_area(&self) -> PhysicalInsets<u32> {
+        PhysicalInsets::new(0, 0, 0, 0)
+    }
+
     fn primary_monitor(&self) -> Option<RootMonitorHandle> {
         None
     }
@@ -562,10 +571,6 @@ impl CoreWindow for Window {
     }
 
     fn pre_present_notify(&self) {}
-
-    fn inner_position(&self) -> Result<PhysicalPosition<i32>, RequestError> {
-        Err(NotSupportedError::new("inner_position is not supported").into())
-    }
 
     fn outer_position(&self) -> Result<PhysicalPosition<i32>, RequestError> {
         Err(NotSupportedError::new("outer_position is not supported").into())
@@ -708,12 +713,10 @@ impl CoreWindow for Window {
 
     fn reset_dead_keys(&self) {}
 
-    #[cfg(feature = "rwh_06")]
     fn rwh_06_display_handle(&self) -> &dyn rwh_06::HasDisplayHandle {
         self
     }
 
-    #[cfg(feature = "rwh_06")]
     fn rwh_06_window_handle(&self) -> &dyn rwh_06::HasWindowHandle {
         self
     }
@@ -725,7 +728,7 @@ pub struct OsError;
 use std::fmt::{self, Display, Formatter};
 impl Display for OsError {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(fmt, "Android OS Error")
+        write!(fmt, "OpenHarmony OS Error")
     }
 }
 
