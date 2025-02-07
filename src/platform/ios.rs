@@ -107,7 +107,7 @@ use std::os::raw::c_void;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::monitor::{MonitorHandle, VideoModeHandle};
+use crate::monitor::{MonitorHandle, VideoMode};
 use crate::window::{Window, WindowAttributes};
 
 /// Additional methods on [`Window`] that are specific to iOS.
@@ -384,23 +384,23 @@ pub trait MonitorHandleExtIOS {
     /// [`UIScreen`]: https://developer.apple.com/documentation/uikit/uiscreen?language=objc
     fn ui_screen(&self) -> *mut c_void;
 
-    /// Returns the preferred [`VideoModeHandle`] for this monitor.
+    /// Returns the preferred [`VideoMode`] for this monitor.
     ///
     /// This translates to a call to [`-[UIScreen preferredMode]`](https://developer.apple.com/documentation/uikit/uiscreen/1617823-preferredmode?language=objc).
-    fn preferred_video_mode(&self) -> VideoModeHandle;
+    fn preferred_video_mode(&self) -> VideoMode;
 }
 
 impl MonitorHandleExtIOS for MonitorHandle {
     #[inline]
     fn ui_screen(&self) -> *mut c_void {
         // SAFETY: The marker is only used to get the pointer of the screen
-        let mtm = unsafe { objc2_foundation::MainThreadMarker::new_unchecked() };
+        let mtm = unsafe { objc2::MainThreadMarker::new_unchecked() };
         objc2::rc::Retained::as_ptr(self.inner.ui_screen(mtm)) as *mut c_void
     }
 
     #[inline]
-    fn preferred_video_mode(&self) -> VideoModeHandle {
-        VideoModeHandle { video_mode: self.inner.preferred_video_mode() }
+    fn preferred_video_mode(&self) -> VideoMode {
+        self.inner.preferred_video_mode()
     }
 }
 

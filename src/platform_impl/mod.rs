@@ -1,4 +1,4 @@
-use crate::monitor::{MonitorHandle as RootMonitorHandle, VideoModeHandle as RootVideoModeHandle};
+use crate::monitor::{MonitorHandle as RootMonitorHandle, VideoMode};
 use crate::window::Fullscreen as RootFullscreen;
 
 #[cfg(android_platform)]
@@ -34,17 +34,19 @@ use self::windows as platform;
 use self::ohos as platform;
 
 /// Helper for converting between platform-specific and generic
-/// [`VideoModeHandle`]/[`MonitorHandle`]
+/// [`VideoMode`]/[`MonitorHandle`]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Fullscreen {
-    Exclusive(VideoModeHandle),
+    Exclusive(MonitorHandle, VideoMode),
     Borderless(Option<MonitorHandle>),
 }
 
 impl From<RootFullscreen> for Fullscreen {
     fn from(f: RootFullscreen) -> Self {
         match f {
-            RootFullscreen::Exclusive(mode) => Self::Exclusive(mode.video_mode),
+            RootFullscreen::Exclusive(handle, video_mode) => {
+                Self::Exclusive(handle.inner, video_mode)
+            },
             RootFullscreen::Borderless(Some(handle)) => Self::Borderless(Some(handle.inner)),
             RootFullscreen::Borderless(None) => Self::Borderless(None),
         }
@@ -54,8 +56,8 @@ impl From<RootFullscreen> for Fullscreen {
 impl From<Fullscreen> for RootFullscreen {
     fn from(f: Fullscreen) -> Self {
         match f {
-            Fullscreen::Exclusive(video_mode) => {
-                Self::Exclusive(RootVideoModeHandle { video_mode })
+            Fullscreen::Exclusive(inner, video_mode) => {
+                Self::Exclusive(RootMonitorHandle { inner }, video_mode)
             },
             Fullscreen::Borderless(Some(inner)) => {
                 Self::Borderless(Some(RootMonitorHandle { inner }))
