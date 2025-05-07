@@ -187,18 +187,19 @@ impl<T: 'static> EventLoop<T> {
         }
     }
 
-    pub fn run<F>(mut self, event_handler: F) -> Result<(), EventLoopError>
+    pub fn run<F>(self, event_handler: F) -> Result<(), EventLoopError>
     where
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop),
     {
-        self.run_on_demand(event_handler)
+        let event_looper = Box::leak(Box::new(self));
+        event_looper.run_on_demand(event_handler)
     }
 
-    pub fn run_on_demand<F>(&mut self, mut event_handler: F) -> Result<(), EventLoopError>
+    pub fn run_on_demand<F>(&mut self, event_handler: F) -> Result<(), EventLoopError>
     where
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop),
     {
-        match self.pump_events(None, &mut event_handler) {
+        match self.pump_events(None, event_handler) {
             PumpStatus::Continue => Ok(()),
             PumpStatus::Exit(code) => Err(EventLoopError::ExitFailure(code)),
         }
