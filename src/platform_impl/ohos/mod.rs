@@ -289,7 +289,6 @@ impl<T: 'static> EventLoop<T> {
             trace!("EventLoop is already running");
         }
         trace!("Mainloop iteration");
-        let cause = self.cause;
         let target = RootAEL { p: self.window_target.p.clone(), _marker: PhantomData };
 
         {
@@ -304,15 +303,13 @@ impl<T: 'static> EventLoop<T> {
                 }))
             };
             self.event_loop.replace(Some(handle));
-            if let Some(ref mut h) = *self.event_loop.borrow_mut() {
-                h(event::Event::NewEvents(cause));
-            }
         }
 
         self.openharmony_app.clone().run_loop(|event| {
             match event {
                 MainEvent::SurfaceCreate { .. } => {
                     if let Some(ref mut h) = *self.event_loop.borrow_mut() {
+                        h(event::Event::NewEvents(StartCause::Init));
                         h(event::Event::Resumed);
                     }
                 },
