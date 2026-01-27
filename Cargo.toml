@@ -114,7 +114,7 @@ softbuffer = { version = "0.4.0", default-features = false, features = [
 
 [target.'cfg(target_env = "ohos")'.dependencies]
 openharmony-ability = { git = "https://github.com/harmony-contrib/openharmony-ability.git" }
-openharmony-ability-derive = { git = "https://github.com/harmony-contrib/openharmony-ability-derive.git" }
+openharmony-ability-derive = { git = "https://github.com/harmony-contrib/openharmony-ability.git" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = "0.6.0"
