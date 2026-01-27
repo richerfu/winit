@@ -318,13 +318,8 @@ impl<T: 'static> EventLoop<T> {
                         h(event::Event::Suspended);
                     }
                 },
-                MainEvent::WindowResize { .. } => {
-                    let win = self.openharmony_app.native_window();
-                    let size = if let Some(win) = win {
-                        PhysicalSize::new(win.width() as _, win.height() as _)
-                    } else {
-                        PhysicalSize::new(0, 0)
-                    };
+                MainEvent::WindowResize(size) => {
+                    let size = PhysicalSize::new(size.width as _, size.height as _);
                     let event = event::Event::WindowEvent {
                         window_id: window::WindowId(WindowId),
                         event: event::WindowEvent::Resized(size),
@@ -344,8 +339,25 @@ impl<T: 'static> EventLoop<T> {
                         h(event);
                     }
                 },
-                MainEvent::ContentRectChange { .. } => {
-                    warn!("TODO: find a way to notify application of content rect change");
+                MainEvent::ContentRectChange(_) => {
+                    // let scale = self.openharmony_app.scale();
+                    // let new_surface_size = Arc::new(Mutex::new(PhysicalSize::new(
+                    //     content.rect.width as _,
+                    //     content.rect.height as _,
+                    // )));
+                    // let event = event::Event::WindowEvent {
+                    //     window_id: window::WindowId(WindowId),
+                    //     event: event::WindowEvent::ScaleFactorChanged {
+                    //         inner_size_writer: InnerSizeWriter::new(Arc::downgrade(
+                    //             &new_surface_size,
+                    //         )),
+                    //         scale_factor: scale as _,
+                    //     },
+                    // };
+
+                    // if let Some(ref mut h) = *self.event_loop.borrow_mut() {
+                    //     h(event);
+                    // }
                 },
                 MainEvent::GainedFocus => {
                     HAS_FOCUS.store(true, Ordering::Relaxed);
@@ -368,27 +380,7 @@ impl<T: 'static> EventLoop<T> {
                     }
                 },
                 MainEvent::ConfigChanged { .. } => {
-                    let win = self.openharmony_app.native_window();
-                    if let Some(win) = win {
-                        let scale = self.openharmony_app.scale();
-                        let width = win.width();
-                        let height = win.height();
-                        let new_surface_size =
-                            Arc::new(Mutex::new(PhysicalSize::new(width as _, height as _)));
-                        let event = event::Event::WindowEvent {
-                            window_id: window::WindowId(WindowId),
-                            event: event::WindowEvent::ScaleFactorChanged {
-                                inner_size_writer: InnerSizeWriter::new(Arc::downgrade(
-                                    &new_surface_size,
-                                )),
-                                scale_factor: scale as _,
-                            },
-                        };
-
-                        if let Some(ref mut h) = *self.event_loop.borrow_mut() {
-                            h(event);
-                        }
-                    }
+                    warn!("TODO: find a way to notify application of config change");
                 },
                 MainEvent::LowMemory => {
                     if let Some(ref mut h) = *self.event_loop.borrow_mut() {
@@ -883,15 +875,13 @@ impl MonitorHandle {
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {
-        if let Some(native_window) = self.app.native_window() {
-            PhysicalSize::new(native_window.width() as _, native_window.height() as _)
-        } else {
-            PhysicalSize::new(0, 0)
-        }
+        let size = self.app.content_rect();
+        PhysicalSize::new(size.width as _, size.height as _)
     }
 
     pub fn position(&self) -> PhysicalPosition<i32> {
-        (0, 0).into()
+        let position = self.app.content_rect();
+        PhysicalPosition::new(position.left as _, position.top as _)
     }
 
     pub fn scale_factor(&self) -> f64 {
