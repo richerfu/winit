@@ -222,6 +222,28 @@ impl<T: 'static> EventLoop<T> {
                         });
                     }
                 },
+                ImeEvent::EnterEvent(_) => {
+                    if let Some(ref mut h) = *self.event_loop.borrow_mut() {
+                        [ElementState::Pressed, ElementState::Released].map(|state| {
+                            h(event::Event::WindowEvent {
+                                window_id: window::WindowId(WindowId),
+                                event: event::WindowEvent::KeyboardInput {
+                                    device_id: event::DeviceId(DeviceId(0)),
+                                    event: event::KeyEvent {
+                                        state,
+                                        logical_key: Key::Named(NamedKey::Enter),
+                                        physical_key: PhysicalKey::Code(KeyCode::Enter),
+                                        platform_specific: KeyEventExtra {},
+                                        repeat: false,
+                                        location: KeyLocation::Standard,
+                                        text: None,
+                                    },
+                                    is_synthetic: false,
+                                },
+                            });
+                        });
+                    }
+                },
 
                 ImeEvent::ImeStatusEvent(s) => match s {
                     KeyboardStatus::Hide => {
@@ -380,7 +402,25 @@ impl<T: 'static> EventLoop<T> {
                     }
                 },
                 MainEvent::ConfigChanged { .. } => {
-                    warn!("TODO: find a way to notify application of config change");
+                    let size = self.openharmony_app.content_rect();
+                    let scale = self.openharmony_app.scale();
+                    let new_surface_size = Arc::new(Mutex::new(PhysicalSize::new(
+                        size.width as _,
+                        size.height as _,
+                    )));
+                    let event = event::Event::WindowEvent {
+                        window_id: window::WindowId(WindowId),
+                        event: event::WindowEvent::ScaleFactorChanged {
+                            inner_size_writer: InnerSizeWriter::new(Arc::downgrade(
+                                &new_surface_size,
+                            )),
+                            scale_factor: scale as _,
+                        },
+                    };
+
+                    if let Some(ref mut h) = *self.event_loop.borrow_mut() {
+                        h(event);
+                    }
                 },
                 MainEvent::LowMemory => {
                     if let Some(ref mut h) = *self.event_loop.borrow_mut() {
