@@ -19,6 +19,7 @@ winit-appkit = { version = "=0.31.0-beta.2", path = "winit-appkit" }
 winit-common = { version = "=0.31.0-beta.2", path = "winit-common" }
 winit-core = { version = "=0.31.0-beta.2", path = "winit-core" }
 winit-orbital = { version = "=0.31.0-beta.2", path = "winit-orbital" }
+winit-ohos = { version = "=0.31.0-beta.2", git = "https://github.com/ohos-rs/winit-ohos.git", branch = "main", default-features = false }
 winit-uikit = { version = "=0.31.0-beta.2", path = "winit-uikit" }
 winit-wayland = { version = "=0.31.0-beta.2", path = "winit-wayland", default-features = false }
 winit-web = { version = "=0.31.0-beta.2", path = "winit-web" }
@@ -96,3 +97,10 @@ wasm-bindgen-futures = "0.4.43"
 wasm-bindgen-test = "0.3"
 web-time = "1"
 web_sys = { package = "web-sys", version = "0.3.70" }
+
+# `winit-ohos` tracks this workspace through its public Git branch. Patch its facade types back to
+# the local workspace while developing Winit itself so there is only one `dpi`/`winit-core` type
+# identity. Patches in dependency manifests are ignored by downstream users.
+[patch."https://github.com/richerfu/winit.git"]
+dpi = { path = "dpi" }
+winit-core = { path = "winit-core" }
