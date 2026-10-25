@@ -373,7 +373,10 @@ declare_class!(
             use std::path::PathBuf;
 
             let pb: Retained<NSPasteboard> = unsafe { msg_send_id![sender, draggingPasteboard] };
-            let filenames = pb.propertyListForType(unsafe { NSFilenamesPboardType }).unwrap();
+            let filenames = match pb.propertyListForType(unsafe { NSFilenamesPboardType }) {
+                Some(filenames) => filenames,
+                None => return false.into(),
+            };
             let filenames: Retained<NSArray<NSString>> = unsafe { Retained::cast(filenames) };
 
             filenames.into_iter().for_each(|file| {
@@ -399,7 +402,10 @@ declare_class!(
             use std::path::PathBuf;
 
             let pb: Retained<NSPasteboard> = unsafe { msg_send_id![sender, draggingPasteboard] };
-            let filenames = pb.propertyListForType(unsafe { NSFilenamesPboardType }).unwrap();
+            let filenames = match pb.propertyListForType(unsafe { NSFilenamesPboardType }) {
+                Some(filenames) => filenames,
+                None => return false.into(),
+            };
             let filenames: Retained<NSArray<NSString>> = unsafe { Retained::cast(filenames) };
 
             filenames.into_iter().for_each(|file| {
@@ -1592,7 +1598,14 @@ impl WindowDelegate {
     // Allow directly accessing the current monitor internally without unwrapping.
     pub(crate) fn current_monitor_inner(&self) -> Option<MonitorHandle> {
         let display_id = get_display_id(&*self.window().screen()?);
-        Some(MonitorHandle::new(display_id))
+        if let Some(monitor) = MonitorHandle::new(display_id) {
+            Some(monitor)
+        } else {
+            // NOTE: Display ID was just fetched from live NSScreen, but can still result in `None`
+            // with certain Thunderbolt docked monitors.
+            warn!(display_id, "got screen with invalid display ID");
+            None
+        }
     }
 
     #[inline]
@@ -1746,9 +1759,13 @@ impl WindowExtMacOS for WindowDelegate {
             self.ivars().is_simple_fullscreen.set(true);
 
             // Simulate pre-Lion fullscreen by hiding the dock and menu bar
-            let presentation_options =
+            let presentation_options = if self.is_borderless_game() {
+                NSApplicationPresentationOptions::NSApplicationPresentationHideDock
+                    | NSApplicationPresentationOptions::NSApplicationPresentationHideMenuBar
+            } else {
                 NSApplicationPresentationOptions::NSApplicationPresentationAutoHideDock
-                    | NSApplicationPresentationOptions::NSApplicationPresentationAutoHideMenuBar;
+                    | NSApplicationPresentationOptions::NSApplicationPresentationAutoHideMenuBar
+            };
             app.setPresentationOptions(presentation_options);
 
             // Hide the titlebar
@@ -1762,11 +1779,8 @@ impl WindowExtMacOS for WindowDelegate {
             self.toggle_style_mask(NSWindowStyleMask::Miniaturizable, false);
             self.toggle_style_mask(NSWindowStyleMask::Resizable, false);
             self.window().setMovable(false);
-
-            true
         } else {
             let new_mask = self.saved_style();
-            self.set_style_mask(new_mask);
             self.ivars().is_simple_fullscreen.set(false);
 
             let save_presentation_opts = self.ivars().save_presentation_opts.get();
@@ -1778,9 +1792,10 @@ impl WindowExtMacOS for WindowDelegate {
 
             self.window().setFrame_display(frame, true);
             self.window().setMovable(true);
-
-            true
+            self.set_style_mask(new_mask);
         }
+
+        true
     }
 
     #[inline]

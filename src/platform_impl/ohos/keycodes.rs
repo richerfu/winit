@@ -153,7 +153,7 @@ pub fn to_physical_key(keycode: Keycode) -> PhysicalKey {
         Keycode::Sleep => KeyCode::Sleep, // what about SoftSleep?
         Keycode::Wakeup => KeyCode::WakeUp,
 
-        keycode => return PhysicalKey::Unidentified(NativeKeyCode::Android(keycode.into())),
+        keycode => return PhysicalKey::Unidentified(NativeKeyCode::Ohos(keycode.into())),
     })
 }
 
@@ -233,7 +233,6 @@ pub fn to_logical(keycode: Keycode) -> Key {
         VolumeDown => Key::Named(NamedKey::AudioVolumeDown),
         Power => Key::Named(NamedKey::Power),
         Camera => Key::Named(NamedKey::Camera),
-        // Clear => Key::Named(NamedKey::Clear),
         AltLeft => Key::Named(NamedKey::Alt),
         AltRight => Key::Named(NamedKey::Alt),
         ShiftLeft => Key::Named(NamedKey::Shift),
@@ -246,14 +245,6 @@ pub fn to_logical(keycode: Keycode) -> Key {
         Enter => Key::Named(NamedKey::Enter),
         Del => Key::Named(NamedKey::Backspace),
 
-        // According to https://developer.android.com/reference/android/view/KeyEvent#KEYCODE_NUM
-        // Num => Key::Named(NamedKey::Alt),
-
-        // Headsethook => Key::Named(NamedKey::HeadsetHook),
-        // Focus => Key::Named(NamedKey::CameraFocus),
-
-        // Notification => Key::Named(NamedKey::Notification),
-        // Search => Key::Named(NamedKey::BrowserSearch),
         MediaPlayPause => Key::Named(NamedKey::MediaPlayPause),
         MediaStop => Key::Named(NamedKey::MediaStop),
         MediaNext => Key::Named(NamedKey::MediaTrackNext),
@@ -325,169 +316,22 @@ pub fn to_logical(keycode: Keycode) -> Key {
         ZoomIn => Key::Named(NamedKey::ZoomIn),
         ZoomOut => Key::Named(NamedKey::ZoomOut),
         TV => Key::Named(NamedKey::TV),
-        // Guide => Key::Named(NamedKey::Guide),
-        // Dvr => Key::Named(NamedKey::DVR),
-        // Bookmark => Key::Named(NamedKey::BrowserFavorites),
-        // Captions => Key::Named(NamedKey::ClosedCaptionToggle),
-        // Settings => Key::Named(NamedKey::Settings),
-        // TvPower => Key::Named(NamedKey::TVPower),
-        // TvInput => Key::Named(NamedKey::TVInput),
-        // StbPower => Key::Named(NamedKey::STBPower),
-        // StbInput => Key::Named(NamedKey::STBInput),
-        // AvrPower => Key::Named(NamedKey::AVRPower),
-        // AvrInput => Key::Named(NamedKey::AVRInput),
-        // ProgRed => Key::Named(NamedKey::ColorF0Red),
-        // ProgGreen => Key::Named(NamedKey::ColorF1Green),
-        // ProgYellow => Key::Named(NamedKey::ColorF2Yellow),
-        // ProgBlue => Key::Named(NamedKey::ColorF3Blue),
-        // AppSwitch => Key::Named(NamedKey::AppSwitch),
-        // LanguageSwitch => Key::Named(NamedKey::GroupNext),
-        // MannerMode => Key::Named(NamedKey::MannerMode),
-        // Keycode3dMode => Key::Named(NamedKey::TV3DMode),
-        // Contacts => Key::Named(NamedKey::LaunchContacts),
         Calendar => Key::Named(NamedKey::LaunchCalendar),
-        // Music => Key::Named(NamedKey::LaunchMusicPlayer),
-        // Calculator => Key::Named(NamedKey::LaunchApplication2),
         ZenkakuHankaku => Key::Named(NamedKey::ZenkakuHankaku),
-        // Eisu => Key::Named(NamedKey::Eisu),
         Muhenkan => Key::Named(NamedKey::NonConvert),
         Henkan => Key::Named(NamedKey::Convert),
         KatakanaHiragana => Key::Named(NamedKey::HiraganaKatakana),
-        // Kana => Key::Named(NamedKey::KanjiMode),
         BrightnessDown => Key::Named(NamedKey::BrightnessDown),
         BrightnessUp => Key::Named(NamedKey::BrightnessUp),
-        // MediaAudioTrack => Key::Named(NamedKey::MediaAudioTrack),
         Sleep => Key::Named(NamedKey::Standby),
         Wakeup => Key::Named(NamedKey::WakeUp),
-        // Pairing => Key::Named(NamedKey::Pairing),
-        // MediaTopMenu => Key::Named(NamedKey::MediaTopMenu),
-        // LastChannel => Key::Named(NamedKey::MediaLast),
-        // TvDataService => Key::Named(NamedKey::TVDataService),
-        // VoiceAssist => Key::Named(NamedKey::VoiceDial),
-        // TvRadioService => Key::Named(NamedKey::TVRadioService),
-        // TvTeletext => Key::Named(NamedKey::Teletext),
-        // TvNumberEntry => Key::Named(NamedKey::TVNumberEntry),
-        // TvTerrestrialAnalog => Key::Named(NamedKey::TVTerrestrialAnalog),
-        // TvTerrestrialDigital => Key::Named(NamedKey::TVTerrestrialDigital),
-        // TvSatellite => Key::Named(NamedKey::TVSatellite),
-        // TvSatelliteBs => Key::Named(NamedKey::TVSatelliteBS),
-        // TvSatelliteCs => Key::Named(NamedKey::TVSatelliteCS),
-        // TvSatelliteService => Key::Named(NamedKey::TVSatelliteToggle),
-        // TvNetwork => Key::Named(NamedKey::TVNetwork),
-        // TvAntennaCable => Key::Named(NamedKey::TVAntennaCable),
-        // TvInputHdmi1 => Key::Named(NamedKey::TVInputHDMI1),
-        // TvInputHdmi2 => Key::Named(NamedKey::TVInputHDMI2),
-        // TvInputHdmi3 => Key::Named(NamedKey::TVInputHDMI3),
-        // TvInputHdmi4 => Key::Named(NamedKey::TVInputHDMI4),
-        // TvInputComposite1 => Key::Named(NamedKey::TVInputComposite1),
-        // TvInputComposite2 => Key::Named(NamedKey::TVInputComposite2),
-        // TvInputComponent1 => Key::Named(NamedKey::TVInputComponent1),
-        // TvInputComponent2 => Key::Named(NamedKey::TVInputComponent2),
-        // TvInputVga1 => Key::Named(NamedKey::TVInputVGA1),
-        // TvAudioDescription => Key::Named(NamedKey::TVAudioDescription),
-        // TvAudioDescriptionMixUp => Key::Named(NamedKey::TVAudioDescriptionMixUp),
-        // TvAudioDescriptionMixDown => Key::Named(NamedKey::TVAudioDescriptionMixDown),
-        // TvZoomMode => Key::Named(NamedKey::ZoomToggle),
-        // TvContentsMenu => Key::Named(NamedKey::TVContentsMenu),
-        // TvMediaContextMenu => Key::Named(NamedKey::TVMediaContext),
-        // TvTimerProgramming => Key::Named(NamedKey::TVTimer),
         Help => Key::Named(NamedKey::Help),
-        // NavigatePrevious => Key::Named(NamedKey::NavigatePrevious),
-        // NavigateNext => Key::Named(NamedKey::NavigateNext),
-        // NavigateIn => Key::Named(NamedKey::NavigateIn),
-        // NavigateOut => Key::Named(NamedKey::NavigateOut),
-        // MediaSkipForward => Key::Named(NamedKey::MediaSkipForward),
-        // MediaSkipBackward => Key::Named(NamedKey::MediaSkipBackward),
-        // MediaStepForward => Key::Named(NamedKey::MediaStepForward),
-        // MediaStepBackward => Key::Named(NamedKey::MediaStepBackward),
         Cut => Key::Named(NamedKey::Cut),
         Copy => Key::Named(NamedKey::Copy),
         Paste => Key::Named(NamedKey::Paste),
         Refresh => Key::Named(NamedKey::BrowserRefresh),
 
-        // -----------------------------------------------------------------
-        // Keycodes that don't have a logical Key mapping
-        // -----------------------------------------------------------------
-        Unknown => Key::Unidentified(native),
-
-        // Can be added on demand
-        // SoftLeft => Key::Unidentified(native),
-        // SoftRight => Key::Unidentified(native),
-        Menu => Key::Unidentified(native),
-
-        // Pictsymbols => Key::Unidentified(native),
-        // SwitchCharset => Key::Unidentified(native),
-
-        // -----------------------------------------------------------------
-        // Gamepad events should be exposed through a separate API, not
-        // keyboard events
-        // ButtonA => Key::Unidentified(native),
-        // ButtonB => Key::Unidentified(native),
-        // ButtonC => Key::Unidentified(native),
-        // ButtonX => Key::Unidentified(native),
-        // ButtonY => Key::Unidentified(native),
-        // ButtonZ => Key::Unidentified(native),
-        // ButtonL1 => Key::Unidentified(native),
-        // ButtonR1 => Key::Unidentified(native),
-        // ButtonL2 => Key::Unidentified(native),
-        // ButtonR2 => Key::Unidentified(native),
-        // ButtonThumbl => Key::Unidentified(native),
-        // ButtonThumbr => Key::Unidentified(native),
-        // ButtonStart => Key::Unidentified(native),
-        // ButtonSelect => Key::Unidentified(native),
-        // ButtonMode => Key::Unidentified(native),
-        // // -----------------------------------------------------------------
-        // Window => Key::Unidentified(native),
-
-        // Button1 => Key::Unidentified(native),
-        // Button2 => Key::Unidentified(native),
-        // Button3 => Key::Unidentified(native),
-        // Button4 => Key::Unidentified(native),
-        // Button5 => Key::Unidentified(native),
-        // Button6 => Key::Unidentified(native),
-        // Button7 => Key::Unidentified(native),
-        // Button8 => Key::Unidentified(native),
-        // Button9 => Key::Unidentified(native),
-        // Button10 => Key::Unidentified(native),
-        // Button11 => Key::Unidentified(native),
-        // Button12 => Key::Unidentified(native),
-        // Button13 => Key::Unidentified(native),
-        // Button14 => Key::Unidentified(native),
-        // Button15 => Key::Unidentified(native),
-        // Button16 => Key::Unidentified(native),
-        Yen => Key::Unidentified(native),
-        Ro => Key::Unidentified(native),
-
-        // Assist => Key::Unidentified(native),
-
-        // Keycode11 => Key::Unidentified(native),
-        // Keycode12 => Key::Unidentified(native),
-
-        // StemPrimary => Key::Unidentified(native),
-        // Stem1 => Key::Unidentified(native),
-        // Stem2 => Key::Unidentified(native),
-        // Stem3 => Key::Unidentified(native),
-
-        // DpadUpLeft => Key::Unidentified(native),
-        // DpadDownLeft => Key::Unidentified(native),
-        // DpadUpRight => Key::Unidentified(native),
-        // DpadDownRight => Key::Unidentified(native),
-
-        // SoftSleep => Key::Unidentified(native),
-
-        // SystemNavigationUp => Key::Unidentified(native),
-        // SystemNavigationDown => Key::Unidentified(native),
-        // SystemNavigationLeft => Key::Unidentified(native),
-        // SystemNavigationRight => Key::Unidentified(native),
-
-        // AllApps => Key::Unidentified(native),
-        // ThumbsUp => Key::Unidentified(native),
-        // ThumbsDown => Key::Unidentified(native),
-        // ProfileSwitch => Key::Unidentified(native),
-
-        // It's always possible that new versions of Android could introduce
-        // key codes we can't know about at compile time.
-        _ => Key::Unidentified(native),
+        Unknown | Menu | Yen | Ro | _ => Key::Unidentified(native),
     }
 }
 
@@ -528,5 +372,18 @@ pub fn to_location(keycode: Keycode) -> KeyLocation {
         NumpadRightParen => KeyLocation::Numpad,
 
         _ => KeyLocation::Standard,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unidentified_physical_keys_use_the_ohos_native_code() {
+        assert_eq!(
+            to_physical_key(Keycode::Fn),
+            PhysicalKey::Unidentified(NativeKeyCode::Ohos(Keycode::Fn.into()))
+        );
     }
 }

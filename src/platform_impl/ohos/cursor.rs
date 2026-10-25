@@ -1,0 +1,40 @@
+use cursor_icon::CursorIcon;
+
+// Values from @ohos.multimodalInput.pointer.PointerStyle.
+pub(crate) fn style(icon: CursorIcon) -> i32 {
+    match icon {
+        CursorIcon::Default => 0,
+        CursorIcon::EResize => 1,
+        CursorIcon::WResize => 2,
+        CursorIcon::SResize => 3,
+        CursorIcon::NResize => 4,
+        CursorIcon::EwResize => 5,
+        CursorIcon::NsResize => 6,
+        CursorIcon::NeResize => 7,
+        CursorIcon::NwResize => 8,
+        CursorIcon::SeResize => 9,
+        CursorIcon::SwResize => 10,
+        CursorIcon::NeswResize => 11,
+        CursorIcon::NwseResize => 12,
+        CursorIcon::Crosshair => 13,
+        CursorIcon::Copy => 14,
+        CursorIcon::NotAllowed | CursorIcon::NoDrop => 15,
+        CursorIcon::Move | CursorIcon::AllScroll => 16,
+        CursorIcon::ZoomIn => 17,
+        CursorIcon::ZoomOut => 18,
+        CursorIcon::Pointer => 19,
+        CursorIcon::Grab => 20,
+        CursorIcon::Grabbing => 21,
+        CursorIcon::ColResize => 22,
+        CursorIcon::RowResize => 23,
+        CursorIcon::Help => 24,
+        CursorIcon::Text => 25,
+        CursorIcon::VerticalText => 26,
+        CursorIcon::Cell => 27,
+        CursorIcon::ContextMenu => 28,
+        CursorIcon::Alias => 29,
+        CursorIcon::Wait => 30,
+        CursorIcon::Progress => 41,
+        _ => 0,
+    }
+}

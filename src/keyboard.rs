@@ -91,6 +91,8 @@ pub enum NativeKeyCode {
     Unidentified,
     /// An Android "scancode".
     Android(u32),
+    /// An OpenHarmony "keycode".
+    Ohos(u32),
     /// A macOS "scancode".
     MacOS(u16),
     /// A Windows "scancode".
@@ -101,7 +103,7 @@ pub enum NativeKeyCode {
 
 impl std::fmt::Debug for NativeKeyCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use NativeKeyCode::{Android, MacOS, Unidentified, Windows, Xkb};
+        use NativeKeyCode::{Android, MacOS, Ohos, Unidentified, Windows, Xkb};
         let mut debug_tuple;
         match self {
             Unidentified => {
@@ -109,6 +111,10 @@ impl std::fmt::Debug for NativeKeyCode {
             },
             Android(code) => {
                 debug_tuple = f.debug_tuple("Android");
+                debug_tuple.field(&format_args!("0x{code:04X}"));
+            },
+            Ohos(code) => {
+                debug_tuple = f.debug_tuple("Ohos");
                 debug_tuple.field(&format_args!("0x{code:04X}"));
             },
             MacOS(code) => {
@@ -200,6 +206,7 @@ impl From<NativeKeyCode> for NativeKey {
         match code {
             NativeKeyCode::Unidentified => NativeKey::Unidentified,
             NativeKeyCode::Android(x) => NativeKey::Android(x),
+            NativeKeyCode::Ohos(x) => NativeKey::Ohos(x),
             NativeKeyCode::MacOS(x) => NativeKey::MacOS(x),
             NativeKeyCode::Windows(x) => NativeKey::Windows(x),
             NativeKeyCode::Xkb(x) => NativeKey::Xkb(x),
@@ -1238,7 +1245,7 @@ pub enum NamedKey {
     Dimmer,
     /// Swap video sources. (`VK_DISPLAY_SWAP`)
     DisplaySwap,
-    /// Select Digital Video Rrecorder. (`KEYCODE_DVR`)
+    /// Select Digital Video Recorder. (`KEYCODE_DVR`)
     DVR,
     /// Exit the current application. (`VK_EXIT`)
     Exit,
