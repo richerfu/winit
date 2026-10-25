@@ -66,6 +66,19 @@ pub enum DragDropEvent {
 type DragDropCallback = Box<dyn Fn(DragDropEvent) + Send + Sync>;
 
 static DRAG_DROP_CALLBACK: Mutex<Option<DragDropCallback>> = Mutex::new(None);
+static LAST_DRAG_POSITION: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
+/// Returns the most recent drag-and-drop cursor position in physical surface pixels,
+/// if a drag is active or has just completed a drop.
+pub fn last_position() -> Option<(f64, f64)> {
+    LAST_DRAG_POSITION.lock().ok().and_then(|pos| *pos)
+}
+
+fn set_last_position(position: Option<(f64, f64)>) {
+    if let Ok(mut slot) = LAST_DRAG_POSITION.lock() {
+        *slot = position;
+    }
+}
 
 /// Register a global callback invoked for OpenHarmony drag-and-drop events.
 ///
@@ -117,9 +130,15 @@ impl DragDrop {
                 .collect()
         };
 
+        let cursor_moved = WindowEvent::CursorMoved {
+            device_id: crate::event::DeviceId(super::DeviceId::dummy()),
+            position: PhysicalPosition::new(position.0, position.1),
+        };
+
         match drag.phase {
             DragPhase::Enter => {
                 self.active = true;
+                set_last_position(Some(position));
                 drag.response.accept();
                 let paths = resolve_paths(&drag.file_uris);
                 self.files = paths.clone();
@@ -131,23 +150,30 @@ impl DragDrop {
                         uris: drag.file_uris.clone(),
                     },
                 });
-                paths.into_iter().map(WindowEvent::HoveredFile).collect()
+                let mut events = Vec::with_capacity(paths.len() + 1);
+                events.push(cursor_moved);
+                events.extend(paths.into_iter().map(WindowEvent::HoveredFile));
+                events
             }
             DragPhase::Move => {
                 if self.active {
+                    set_last_position(Some(position));
                     drag.response.accept();
                     emit_drag_drop_event(DragDropEvent::Over {
                         window_id: window,
                         position,
                     });
+                    vec![cursor_moved]
+                } else {
+                    Vec::new()
                 }
-                Vec::new()
             }
             DragPhase::Drop => {
                 if !self.active {
                     return Vec::new();
                 }
                 self.active = false;
+                set_last_position(Some(position));
                 drag.response.accept();
                 let mut paths = resolve_paths(&drag.file_uris);
                 if paths.is_empty() {
@@ -163,13 +189,17 @@ impl DragDrop {
                         uris: drag.file_uris.clone(),
                     },
                 });
-                paths.into_iter().map(WindowEvent::DroppedFile).collect()
+                let mut events = Vec::with_capacity(paths.len() + 1);
+                events.push(cursor_moved);
+                events.extend(paths.into_iter().map(WindowEvent::DroppedFile));
+                events
             }
             DragPhase::Leave => {
                 if !self.active {
                     return Vec::new();
                 }
                 self.active = false;
+                set_last_position(None);
                 self.files.clear();
                 emit_drag_drop_event(DragDropEvent::Left { window_id: window });
                 vec![WindowEvent::HoveredFileCancelled]

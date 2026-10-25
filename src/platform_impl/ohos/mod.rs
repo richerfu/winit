@@ -2950,6 +2950,10 @@ impl Window {
         &self.app
     }
 
+    pub fn real_window_id(&self) -> Option<i32> {
+        self.shared.lock().real_window_id
+    }
+
     #[cfg(feature = "rwh_04")]
     pub fn raw_window_handle_rwh_04(&self) -> rwh_04::RawWindowHandle {
         unreachable!("rwh_04 is not supported on OpenHarmony");

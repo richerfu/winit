@@ -57,6 +57,9 @@ pub trait WindowExtOpenHarmony {
 
     /// Get the current system configuration of the ability.
     fn config(&self) -> Configuration;
+
+    /// Get the resolved native OpenHarmony window ID (`win.getWindowProperties().id`), if available.
+    fn real_window_id(&self) -> Option<i32>;
 }
 
 impl WindowExtOpenHarmony for Window {
@@ -78,6 +81,10 @@ impl WindowExtOpenHarmony for Window {
 
     fn config(&self) -> Configuration {
         self.window.config()
+    }
+
+    fn real_window_id(&self) -> Option<i32> {
+        self.window.real_window_id()
     }
 }
 
