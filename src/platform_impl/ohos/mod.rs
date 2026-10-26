@@ -147,7 +147,7 @@ static EVENT_LOOP_CREATED: AtomicBool = AtomicBool::new(false);
 #[derive(Debug, Default)]
 struct InputState {
     pressed_fingers: HashSet<i32>,
-    pending_touch: Option<TouchEventData>,
+    last_pointer: Option<openharmony_ability::PointerInputData>,
     pen_metadata: Option<openharmony_ability::StylusInputData>,
     mouse_inside: bool,
     last_mouse_position: Option<PhysicalPosition<f64>>,
@@ -212,6 +212,7 @@ struct WindowState {
     min_size: Option<PhysicalSize<u32>>,
     max_size: Option<PhysicalSize<u32>>,
     real_window_id: Option<i32>,
+    display_id: Option<u64>,
     initial_attributes: Option<WindowAttributes>,
     redraw_pending: bool,
     resize_settle: resize_settle::ResizeSettle,
@@ -271,6 +272,7 @@ impl SharedWindowState {
                 min_size: None,
                 max_size: None,
                 real_window_id: None,
+                display_id: u64::try_from(app.config().display_id).ok(),
                 initial_attributes: None,
                 redraw_pending: false,
                 resize_settle: Default::default(),
@@ -452,31 +454,22 @@ impl<T: 'static> EventLoop<T> {
     where
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop) + ?Sized,
     {
-        if let Some(touch) = self.input.pending_touch.take() {
-            let mouse_emulated_touch = matches!(
-                event,
-                InputEvent::ArkUi(ArkUiInputEvent::Pointer(pointer))
-                    if pointer.event_type == UIInputEvent::Touch
-                        && pointer.timestamp == touch.timestamp
-                        && pointer.source_type == UIInputSourceType::Mouse
-            );
-            self.input.pen_metadata = match event {
-                InputEvent::ArkUi(ArkUiInputEvent::Pointer(pointer))
-                    if pointer.timestamp == touch.timestamp =>
-                {
-                    pointer.stylus
-                }
-                _ => None,
-            };
-            if !mouse_emulated_touch {
-                self.handle_touch_event(&touch, event_handler);
-            }
-            self.input.pen_metadata = None;
-        }
         match event {
             InputEvent::XComponent(event) => match event {
                 XComponentInputEvent::Touch(motion_event) => {
-                    self.input.pending_touch = Some(motion_event.clone());
+                    let pointer = self
+                        .input
+                        .last_pointer
+                        .filter(|p| p.timestamp == motion_event.timestamp);
+                    if pointer.is_some_and(|p| {
+                        p.event_type == UIInputEvent::Touch
+                            && p.source_type == UIInputSourceType::Mouse
+                    }) {
+                        return;
+                    }
+                    self.input.pen_metadata = pointer.and_then(|p| p.stylus);
+                    self.handle_touch_event(motion_event, event_handler);
+                    self.input.pen_metadata = None;
                 }
                 XComponentInputEvent::Mouse(mouse_event) => {
                     self.handle_mouse_event(mouse_event, event_handler);
@@ -651,6 +644,7 @@ impl<T: 'static> EventLoop<T> {
                 self.update_focus(*focused, event_handler);
             }
             ArkUiInputEvent::Pointer(pointer) => {
+                self.input.last_pointer = Some(*pointer);
                 drag_drop::set_pointer(
                     crate::window::WindowId(self.current_window),
                     pointer.pointer_id,
@@ -832,6 +826,20 @@ impl<T: 'static> EventLoop<T> {
     ) where
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop) + ?Sized,
     {
+        let fallback_pen = (self.input.pen_metadata.is_none()
+            && matches!(
+                point.event_tool_type,
+                openharmony_ability::xcomponent::TouchPointTool::Pen
+            ))
+        .then(|| openharmony_ability::StylusInputData {
+            pressure: point.force,
+            tilt_x: point.tilt_x.unwrap_or(0.0),
+            tilt_y: point.tilt_y.unwrap_or(0.0),
+            rotation: None,
+        });
+        if fallback_pen.is_some() {
+            self.input.pen_metadata = fallback_pen;
+        }
         self.emit_touch_point(
             event.event_type,
             point.id,
@@ -841,6 +849,9 @@ impl<T: 'static> EventLoop<T> {
             event.device_id,
             event_handler,
         );
+        if fallback_pen.is_some() {
+            self.input.pen_metadata = None;
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1298,6 +1309,7 @@ impl<T: 'static> EventLoop<T> {
 
     fn sync_frame_delivery(&self) {
         for (id, shared) in self.registered_windows() {
+            shared.frame.invalidate_delivery();
             shared
                 .frame
                 .sync_delivery(&self.openharmony_app, id.into_raw() as i64);
@@ -1423,6 +1435,20 @@ impl<T: 'static> EventLoop<T> {
             self.window_target.p.shared = shared;
         }
 
+        if let MainEvent::Input(InputEvent::ArkUi(ArkUiInputEvent::Pointer(pointer)))
+        | MainEvent::SubWindowInput {
+            event: InputEvent::ArkUi(ArkUiInputEvent::Pointer(pointer)),
+            ..
+        } = &event
+        {
+            self.input.last_pointer = Some(*pointer);
+            drag_drop::set_pointer(
+                crate::window::WindowId(self.current_window),
+                pointer.pointer_id,
+            );
+            return;
+        }
+
         let user_turn = matches!(&event, MainEvent::UserEvent);
         let fallback_tick = match &event {
             MainEvent::WindowRedraw(_) | MainEvent::SubWindowRedraw { .. } => Some(id),
@@ -1513,8 +1539,10 @@ impl<T: 'static> EventLoop<T> {
         if events::take_pending() {
             self.request_window_redraw(GLOBAL_WINDOW);
         }
+        let windows = self.registered_windows();
         if !self.window_target.p.exiting() {
-            for (id, shared) in self.registered_windows() {
+            for (id, shared) in &windows {
+                let id = *id;
                 let tick = if user_turn {
                     shared
                         .frame
@@ -1558,8 +1586,7 @@ impl<T: 'static> EventLoop<T> {
             return;
         }
         self.wait_started = Instant::now();
-        let presentable = self
-            .registered_windows()
+        let presentable = windows
             .into_iter()
             .find(|(_, shared)| shared.lock().presentable());
         use control_flow::{control_flow_action, Action, ControlFlow as Policy};
@@ -1607,6 +1634,9 @@ impl<T: 'static> EventLoop<T> {
                     let resized = state.outer_size != outer_size;
                     state.position = position;
                     state.outer_size = outer_size;
+                    if moved {
+                        state.display_id = None;
+                    }
                     if resized {
                         state.resize_settle.extend(Instant::now());
                     }
@@ -1763,6 +1793,7 @@ impl<T: 'static> EventLoop<T> {
             self.window_target.p.shared.sync_active(&state);
         }
         self.sync_frame_delivery();
+        self.openharmony_app.set_frame_rate(60, 120, 120);
         self.synchronize_window_state();
         self.ensure_resumed(event_handler);
         if !self.surface_available {
@@ -1961,14 +1992,25 @@ impl<T: 'static> EventLoop<T> {
     where
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop) + ?Sized,
     {
+        monitor::invalidate();
         let scale_factor = scale_factor(&self.openharmony_app);
         let theme = theme(configuration.color_mode);
+        let config_display_id = u64::try_from(configuration.display_id).ok();
         for (id, shared) in self.registered_windows() {
             let (old_scale, old_theme, current_size) = {
                 let mut state = shared.lock();
                 let old = (state.scale_factor, state.theme, state.surface_size);
                 state.scale_factor = scale_factor;
                 state.theme = theme;
+                state.display_id = state
+                    .real_window_id
+                    .and_then(|wid| {
+                        ohos_window_manager_binding::Window::from_id(wid)
+                            .properties()
+                            .ok()
+                    })
+                    .map(|p| u64::from(p.display_id))
+                    .or(config_display_id);
                 old
             };
             if (scale_factor - old_scale).abs() > f64::EPSILON {
@@ -2231,7 +2273,19 @@ impl Window {
         }
         window.command("resolve window id", |client, state, id| async move {
             let id = client.get_real_window_id(id).await?;
-            state.lock().real_window_id = i32::try_from(id).ok();
+            let real_id = i32::try_from(id).ok();
+            let display_id = real_id
+                .and_then(|wid| {
+                    ohos_window_manager_binding::Window::from_id(wid)
+                        .properties()
+                        .ok()
+                })
+                .map(|p| u64::from(p.display_id));
+            let mut locked = state.lock();
+            locked.real_window_id = real_id;
+            if display_id.is_some() {
+                locked.display_id = display_id;
+            }
             Ok(())
         });
     }
@@ -2357,16 +2411,20 @@ impl Window {
     }
 
     pub fn current_monitor(&self) -> Option<MonitorHandle> {
-        let id = self
-            .shared
-            .lock()
-            .real_window_id
-            .and_then(|id| {
-                ohos_window_manager_binding::Window::from_id(id)
-                    .properties()
-                    .ok()
-            })
-            .map(|p| u64::from(p.display_id));
+        let id = {
+            let mut state = self.shared.lock();
+            if state.display_id.is_none() {
+                state.display_id = state
+                    .real_window_id
+                    .and_then(|id| {
+                        ohos_window_manager_binding::Window::from_id(id)
+                            .properties()
+                            .ok()
+                    })
+                    .map(|p| u64::from(p.display_id));
+            }
+            state.display_id
+        };
         monitor::all()
             .into_iter()
             .find(|monitor| Some(monitor.native_id()) == id)

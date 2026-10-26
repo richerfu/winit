@@ -1,5 +1,8 @@
 use std::{
-    sync::{Arc, OnceLock},
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc, OnceLock,
+    },
     time::Instant,
 };
 
@@ -23,7 +26,12 @@ pub(crate) struct FrameScheduler {
     vsync: Option<Vsync>,
     state: Arc<FrameRequest>,
     wake: Arc<MainWake>,
+    synced_delivery: AtomicU8,
 }
+
+const DELIVERY_UNSYNCED: u8 = 0;
+const DELIVERY_ON_DEMAND: u8 = 1;
+const DELIVERY_CONTINUOUS: u8 = 2;
 
 impl std::fmt::Debug for FrameScheduler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -43,6 +51,7 @@ impl FrameScheduler {
             vsync,
             state: Arc::new(FrameRequest::default()),
             wake,
+            synced_delivery: AtomicU8::new(DELIVERY_UNSYNCED),
         }
     }
 
@@ -79,14 +88,23 @@ impl FrameScheduler {
         }
     }
 
+    pub(crate) fn invalidate_delivery(&self) {
+        self.synced_delivery
+            .store(DELIVERY_UNSYNCED, Ordering::Release);
+    }
+
     pub(crate) fn sync_delivery(&self, app: &OpenHarmonyApp, id: i64) {
-        let delivery = if self.healthy() {
-            FrameInputDelivery::OnDemand
+        let (delivery, tag) = if self.healthy() {
+            (FrameInputDelivery::OnDemand, DELIVERY_ON_DEMAND)
         } else {
-            FrameInputDelivery::Continuous
+            (FrameInputDelivery::Continuous, DELIVERY_CONTINUOUS)
         };
-        if let Err(error) = app.set_frame_input_delivery_for(id, delivery) {
-            tracing::warn!("OHOS frame delivery for window {id}: {error}");
+        if self.synced_delivery.load(Ordering::Acquire) == tag {
+            return;
+        }
+        match app.set_frame_input_delivery_for(id, delivery) {
+            Ok(()) => self.synced_delivery.store(tag, Ordering::Release),
+            Err(error) => tracing::warn!("OHOS frame delivery for window {id}: {error}"),
         }
     }
 }

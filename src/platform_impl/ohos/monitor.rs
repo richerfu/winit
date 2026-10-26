@@ -89,18 +89,33 @@ impl VideoModeHandle {
     }
 }
 
+type CachedMonitors = Option<(Instant, u64, VecDeque<MonitorHandle>)>;
+static CACHE: OnceLock<Mutex<CachedMonitors>> = OnceLock::new();
+
+pub(crate) fn invalidate() {
+    if let Some(cache) = CACHE.get() {
+        *cache.lock().unwrap() = None;
+    }
+}
+
 pub(crate) fn all() -> VecDeque<MonitorHandle> {
-    type CachedMonitors = Option<(Instant, VecDeque<MonitorHandle>)>;
-    static CACHE: OnceLock<Mutex<CachedMonitors>> = OnceLock::new();
+    cached().1
+}
+
+fn cached() -> (u64, VecDeque<MonitorHandle>) {
     let mut cache = CACHE.get_or_init(Default::default).lock().unwrap();
-    if let Some((time, monitors)) = &*cache {
-        if time.elapsed().as_millis() < 500 {
-            return monitors.clone();
+    if let Some((time, default_id, monitors)) = &*cache {
+        if time.elapsed().as_millis() < 5000 {
+            return (*default_id, monitors.clone());
         }
     }
+    let mut default_id = 0;
+    unsafe {
+        ohos_display_sys::OH_NativeDisplayManager_GetDefaultDisplayId(&mut default_id);
+    }
     let monitors = query();
-    *cache = Some((Instant::now(), monitors.clone()));
-    monitors
+    *cache = Some((Instant::now(), default_id, monitors.clone()));
+    (default_id, monitors)
 }
 
 fn query() -> VecDeque<MonitorHandle> {
@@ -148,9 +163,10 @@ fn query() -> VecDeque<MonitorHandle> {
 }
 
 pub(crate) fn primary() -> Option<MonitorHandle> {
-    let mut id = 0;
-    unsafe {
-        ohos_display_sys::OH_NativeDisplayManager_GetDefaultDisplayId(&mut id);
-    }
-    all().into_iter().find(|m| m.native_id() == id)
+    let (id, monitors) = cached();
+    monitors
+        .iter()
+        .find(|m| m.native_id() == id)
+        .cloned()
+        .or_else(|| monitors.into_iter().next())
 }
