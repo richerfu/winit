@@ -30,37 +30,17 @@ pub struct DragData {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DragDropEvent {
     /// A drag entered the window surface.
-    Entered {
-        window_id: WindowId,
-        position: (f64, f64),
-        data: DragData,
-    },
+    Entered { window_id: WindowId, position: (f64, f64), data: DragData },
     /// A drag moved over the window surface.
-    Over {
-        window_id: WindowId,
-        position: (f64, f64),
-    },
+    Over { window_id: WindowId, position: (f64, f64) },
     /// Data was dropped onto the window surface.
-    Dropped {
-        window_id: WindowId,
-        position: (f64, f64),
-        data: DragData,
-    },
+    Dropped { window_id: WindowId, position: (f64, f64), data: DragData },
     /// A drag left the window surface without dropping.
-    Left {
-        window_id: WindowId,
-    },
+    Left { window_id: WindowId },
     /// An outgoing native file drag completed with a drop.
-    OutgoingDropped {
-        window_id: WindowId,
-        id: i64,
-        operation: DragOperation,
-    },
+    OutgoingDropped { window_id: WindowId, id: i64, operation: DragOperation },
     /// An outgoing native file drag was cancelled or failed.
-    OutgoingCanceled {
-        window_id: WindowId,
-        id: i64,
-    },
+    OutgoingCanceled { window_id: WindowId, id: i64 },
 }
 
 type DragDropCallback = Box<dyn Fn(DragDropEvent) + Send + Sync>;
@@ -125,9 +105,7 @@ impl DragDrop {
             f64::from(drag.window_y) - f64::from(offset.y),
         );
         let resolve_paths = |uris: &[String]| -> Vec<PathBuf> {
-            uris.iter()
-                .map(|uri| file_path(uri).unwrap_or_else(|| PathBuf::from(uri)))
-                .collect()
+            uris.iter().map(|uri| file_path(uri).unwrap_or_else(|| PathBuf::from(uri))).collect()
         };
 
         let cursor_moved = WindowEvent::CursorMoved {
@@ -145,29 +123,23 @@ impl DragDrop {
                 emit_drag_drop_event(DragDropEvent::Entered {
                     window_id: window,
                     position,
-                    data: DragData {
-                        paths: paths.clone(),
-                        uris: drag.file_uris.clone(),
-                    },
+                    data: DragData { paths: paths.clone(), uris: drag.file_uris.clone() },
                 });
                 let mut events = Vec::with_capacity(paths.len() + 1);
                 events.push(cursor_moved);
                 events.extend(paths.into_iter().map(WindowEvent::HoveredFile));
                 events
-            }
+            },
             DragPhase::Move => {
                 if self.active {
                     set_last_position(Some(position));
                     drag.response.accept();
-                    emit_drag_drop_event(DragDropEvent::Over {
-                        window_id: window,
-                        position,
-                    });
+                    emit_drag_drop_event(DragDropEvent::Over { window_id: window, position });
                     vec![cursor_moved]
                 } else {
                     Vec::new()
                 }
-            }
+            },
             DragPhase::Drop => {
                 if !self.active {
                     return Vec::new();
@@ -184,16 +156,13 @@ impl DragDrop {
                 emit_drag_drop_event(DragDropEvent::Dropped {
                     window_id: window,
                     position,
-                    data: DragData {
-                        paths: paths.clone(),
-                        uris: drag.file_uris.clone(),
-                    },
+                    data: DragData { paths: paths.clone(), uris: drag.file_uris.clone() },
                 });
                 let mut events = Vec::with_capacity(paths.len() + 1);
                 events.push(cursor_moved);
                 events.extend(paths.into_iter().map(WindowEvent::DroppedFile));
                 events
-            }
+            },
             DragPhase::Leave => {
                 if !self.active {
                     return Vec::new();
@@ -203,7 +172,7 @@ impl DragDrop {
                 self.files.clear();
                 emit_drag_drop_event(DragDropEvent::Left { window_id: window });
                 vec![WindowEvent::HoveredFileCancelled]
-            }
+            },
         }
     }
 }
@@ -213,9 +182,7 @@ pub fn file_path(uri: &str) -> Option<PathBuf> {
     if !uri.starts_with("file://") {
         return None;
     }
-    ohos_fileuri_binding::get_path_from_uri(uri)
-        .ok()
-        .map(Into::into)
+    ohos_fileuri_binding::get_path_from_uri(uri).ok().map(Into::into)
 }
 
 /// Encode an accessible local path for a native file drag or clipboard record.
@@ -245,10 +212,7 @@ fn next_id() -> i64 {
 }
 
 pub(crate) fn set_pointer(window: WindowId, pointer: Option<i32>) {
-    POINTER.set((
-        window,
-        pointer.filter(|id| (0..=9).contains(id)).unwrap_or(0),
-    ));
+    POINTER.set((window, pointer.filter(|id| (0..=9).contains(id)).unwrap_or(0)));
 }
 
 /// Start a native file drag outside the input callback.
@@ -281,12 +245,7 @@ pub fn start_file_drag_with_options(
         if outgoing.is_some() {
             return Err("Another outgoing file drag is already active".into());
         }
-        *outgoing = Some(Outgoing {
-            id,
-            source,
-            session: None,
-            failed: false,
-        });
+        *outgoing = Some(Outgoing { id, source, session: None, failed: false });
         Ok(())
     })?;
     let (window, pointer) = POINTER.get();
@@ -303,9 +262,8 @@ pub fn start_file_drag_with_options(
         if !OUTGOING.with_borrow(|outgoing| outgoing.as_ref().is_some_and(|drag| drag.id == id)) {
             return;
         }
-        let session = app
-            .with_xcomponent_for(raw_window_id, NativeFileDrag::node_handle)
-            .map(|node| {
+        let session =
+            app.with_xcomponent_for(raw_window_id, NativeFileDrag::node_handle).map(|node| {
                 NativeFileDrag::start_with_preview(
                     node,
                     pointer,
@@ -320,13 +278,13 @@ pub fn start_file_drag_with_options(
                     Some(Ok(session)) => {
                         tracing::info!("OHOS native file drag started for {source:?}");
                         outgoing.session = Some(session);
-                    }
+                    },
                     error => {
                         if let Some(Err(error)) = error {
                             tracing::warn!("OHOS file drag: {error}");
                         }
                         outgoing.failed = true;
-                    }
+                    },
                 }
             }
         });
@@ -351,36 +309,23 @@ pub(crate) fn drain_outgoing() {
     }) else {
         return;
     };
-    let event = match outgoing
-        .session
-        .as_ref()
-        .and_then(|session| session.result())
-    {
+    let event = match outgoing.session.as_ref().and_then(|session| session.result()) {
         Some(NativeDragResult::Dropped(operation)) if !outgoing.failed => {
             DragDropEvent::OutgoingDropped {
                 window_id: outgoing.source,
                 id: outgoing.id,
                 operation,
             }
-        }
-        _ => DragDropEvent::OutgoingCanceled {
-            window_id: outgoing.source,
-            id: outgoing.id,
         },
+        _ => DragDropEvent::OutgoingCanceled { window_id: outgoing.source, id: outgoing.id },
     };
-    tracing::info!(
-        "OHOS native file drag completed for {:?}: {event:?}",
-        outgoing.source
-    );
+    tracing::info!("OHOS native file drag completed for {:?}: {event:?}", outgoing.source);
     emit_drag_drop_event(event);
 }
 
 pub(crate) fn cancel_outgoing(window: Option<WindowId>) {
     let old = OUTGOING.with_borrow_mut(|outgoing| {
-        if outgoing
-            .as_ref()
-            .is_some_and(|drag| window.is_none_or(|window| drag.source == window))
-        {
+        if outgoing.as_ref().is_some_and(|drag| window.is_none_or(|window| drag.source == window)) {
             outgoing.take()
         } else {
             None

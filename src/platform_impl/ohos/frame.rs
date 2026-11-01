@@ -35,9 +35,7 @@ const DELIVERY_CONTINUOUS: u8 = 2;
 
 impl std::fmt::Debug for FrameScheduler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FrameScheduler")
-            .field("state", &self.state)
-            .finish_non_exhaustive()
+        f.debug_struct("FrameScheduler").field("state", &self.state).finish_non_exhaustive()
     }
 }
 
@@ -89,8 +87,7 @@ impl FrameScheduler {
     }
 
     pub(crate) fn invalidate_delivery(&self) {
-        self.synced_delivery
-            .store(DELIVERY_UNSYNCED, Ordering::Release);
+        self.synced_delivery.store(DELIVERY_UNSYNCED, Ordering::Release);
     }
 
     pub(crate) fn sync_delivery(&self, app: &OpenHarmonyApp, id: i64) {

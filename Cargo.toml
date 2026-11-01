@@ -67,6 +67,7 @@ wayland = [
     "sctk",
     "ahash",
     "memmap2",
+    "percent-encoding",
 ]
 wayland-dlopen = ["wayland-backend/dlopen"]
 wayland-csd-adwaita = ["sctk-adwaita", "sctk-adwaita/ab_glyph"]
@@ -94,7 +95,8 @@ cfg_aliases = "0.2.1"
 [dependencies]
 bitflags = "2"
 cursor-icon = "1.1.0"
-dpi = { version = "0.1.1", path = "dpi" }
+# Keep the published crate's registry resolution when consuming this Git revision.
+dpi = "0.1.1"
 rwh_04 = { package = "raw-window-handle", version = "0.4", optional = true }
 rwh_05 = { package = "raw-window-handle", version = "0.5.2", features = [
     "std",
@@ -130,20 +132,20 @@ ohos-display-sys = { version = "0.1.4", features = ["api-14"] }
 ohos-fileshare-binding = "0.2.4"
 ohos-fileuri-binding = "0.1"
 ohos-vsync-binding = "0.3"
-ohos-window-manager-binding = { version = "0.1.1", git = "https://github.com/ohos-rs/ohos-native-bindings.git", rev = "8f4c9db46159fb567853198a8b4eb0e2ce0eb6a8", features = ["api-22"] }
-openharmony-ability = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3", features = ["keyboard", "mouse", "drag", "stylus"] }
-openharmony-ability-derive = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3" }
-openharmony-ability-plugin-accessibility = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3", optional = true }
-openharmony-ability-plugin-app-control = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3" }
-openharmony-ability-plugin-clipboard = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3" }
-openharmony-ability-plugin-files = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3" }
-openharmony-ability-plugin-menu = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3", optional = true }
-openharmony-ability-plugin-notification = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3", optional = true }
-openharmony-ability-plugin-permission = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3" }
-openharmony-ability-plugin-process = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3", optional = true }
-openharmony-ability-plugin-system-state = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3", optional = true }
-openharmony-ability-plugin-url = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3" }
-openharmony-ability-plugin-window = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "e2c844358ce2406a8e6800e9fbc88ed1bb47d279", version = "1.0.0-beta.3" }
+ohos-window-manager-binding = { version = "0.1.2", features = ["api-22"] }
+openharmony-ability = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", features = ["keyboard", "mouse", "drag", "stylus"] }
+openharmony-ability-derive = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
+openharmony-ability-plugin-accessibility = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
+openharmony-ability-plugin-app-control = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
+openharmony-ability-plugin-clipboard = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
+openharmony-ability-plugin-files = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
+openharmony-ability-plugin-menu = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
+openharmony-ability-plugin-notification = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
+openharmony-ability-plugin-permission = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
+openharmony-ability-plugin-process = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
+openharmony-ability-plugin-system-state = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
+openharmony-ability-plugin-url = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
+openharmony-ability-plugin-window = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = "0.6.0"
@@ -296,6 +298,9 @@ rustix = { version = "0.38.4", default-features = false, features = [
     "system",
     "thread",
     "process",
+    "event",
+    "fs",
+    "pipe",
 ] }
 sctk = { package = "smithay-client-toolkit", version = "0.19.2", default-features = false, features = [
     "calloop",
@@ -409,3 +414,13 @@ edition = "2021"
 [workspace.dependencies]
 serde = { version = "1", features = ["serde_derive"] }
 mint = "0.5.6"
+
+[[test]]
+name = "macos_termination"
+path = "tests/macos_termination.rs"
+harness = false
+
+[[test]]
+name = "ime_reset_dispatch"
+path = "tests/ime_reset_dispatch.rs"
+harness = false

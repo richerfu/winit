@@ -11,10 +11,7 @@ pub(crate) struct Geometry<T>(Mutex<State<T>>);
 
 impl<T> Default for Geometry<T> {
     fn default() -> Self {
-        Self(Mutex::new(State {
-            latest: None,
-            in_flight: false,
-        }))
+        Self(Mutex::new(State { latest: None, in_flight: false }))
     }
 }
 

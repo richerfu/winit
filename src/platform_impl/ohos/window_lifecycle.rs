@@ -35,10 +35,7 @@ impl WindowLifecycle {
         }
         self.closed = true;
         self.surface_available = false;
-        CloseEvents {
-            close_requested: !self.dropped_by_app,
-            destroyed: true,
-        }
+        CloseEvents { close_requested: !self.dropped_by_app, destroyed: true }
     }
 
     pub(crate) fn presentable(&self, visible: bool, minimized: bool) -> bool {

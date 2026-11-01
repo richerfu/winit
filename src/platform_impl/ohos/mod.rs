@@ -202,6 +202,8 @@ struct WindowState {
     ime_purpose: ImePurpose,
     ime_cursor_area: Option<(Position, Size)>,
     ime_surrounding_text: Option<(String, usize, usize)>,
+    ime_preedit_active: bool,
+    pending_ime_events: VecDeque<event::WindowEvent>,
     title: String,
     resizable: bool,
     decorations: bool,
@@ -262,6 +264,8 @@ impl SharedWindowState {
                 ime_purpose: ImePurpose::Normal,
                 ime_cursor_area: None,
                 ime_surrounding_text: None,
+                ime_preedit_active: false,
+                pending_ime_events: VecDeque::new(),
                 title: String::new(),
                 resizable: true,
                 decorations: true,
@@ -317,6 +321,15 @@ impl WindowState {
 
     fn occluded(&self) -> bool {
         !self.visible || self.minimized
+    }
+
+    fn clear_ime_reset_state(&mut self) {
+        self.ime_preedit_active = false;
+        self.pending_ime_events.clear();
+    }
+
+    fn can_reset_ime(&self) -> bool {
+        self.ime_allowed && !self.lifecycle.closed && !self.lifecycle.dropped_by_app
     }
 }
 
@@ -419,18 +432,12 @@ impl<T: 'static> EventLoop<T> {
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop) + ?Sized,
     {
         if !self.resumed
-            && !matches!(
-                event,
-                event::WindowEvent::Destroyed | event::WindowEvent::CloseRequested
-            )
+            && !matches!(event, event::WindowEvent::Destroyed | event::WindowEvent::CloseRequested)
         {
             return;
         }
         event_handler(
-            event::Event::WindowEvent {
-                window_id: crate::window::WindowId(window_id),
-                event,
-            },
+            event::Event::WindowEvent { window_id: crate::window::WindowId(window_id), event },
             &self.window_target,
         );
     }
@@ -440,10 +447,7 @@ impl<T: 'static> EventLoop<T> {
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop) + ?Sized,
     {
         event_handler(
-            event::Event::DeviceEvent {
-                device_id: crate::event::DeviceId(device_id),
-                event,
-            },
+            event::Event::DeviceEvent { device_id: crate::event::DeviceId(device_id), event },
             &self.window_target,
         );
     }
@@ -457,10 +461,8 @@ impl<T: 'static> EventLoop<T> {
         match event {
             InputEvent::XComponent(event) => match event {
                 XComponentInputEvent::Touch(motion_event) => {
-                    let pointer = self
-                        .input
-                        .last_pointer
-                        .filter(|p| p.timestamp == motion_event.timestamp);
+                    let pointer =
+                        self.input.last_pointer.filter(|p| p.timestamp == motion_event.timestamp);
                     if pointer.is_some_and(|p| {
                         p.event_type == UIInputEvent::Touch
                             && p.source_type == UIInputSourceType::Mouse
@@ -470,10 +472,10 @@ impl<T: 'static> EventLoop<T> {
                     self.input.pen_metadata = pointer.and_then(|p| p.stylus);
                     self.handle_touch_event(motion_event, event_handler);
                     self.input.pen_metadata = None;
-                }
+                },
                 XComponentInputEvent::Mouse(mouse_event) => {
                     self.handle_mouse_event(mouse_event, event_handler);
-                }
+                },
                 XComponentInputEvent::Hover(hovered) => {
                     if !hovered {
                         self.window_target.p.shared.lock().invalidate_cursor();
@@ -489,7 +491,7 @@ impl<T: 'static> EventLoop<T> {
                             event_handler,
                         );
                     }
-                }
+                },
                 XComponentInputEvent::Key(key) => match key.action {
                     Action::Down => self.emit_key_event(
                         key.code,
@@ -518,7 +520,7 @@ impl<T: 'static> EventLoop<T> {
                         event::WindowEvent::Ime(Ime::Commit(s.text.clone())),
                         event_handler,
                     );
-                }
+                },
                 ImeEvent::BackspaceEvent(count) | ImeEvent::DeleteForwardEvent(count) => {
                     let count = (*count).max(0) as usize;
                     let (before, after) = if matches!(data, ImeEvent::BackspaceEvent(_)) {
@@ -537,20 +539,26 @@ impl<T: 'static> EventLoop<T> {
                         event::WindowEvent::Ime(Ime::Enabled),
                         event_handler,
                     );
-                }
-                ImeEvent::PreviewTextEvent { text, .. } => self.emit_window_event(
-                    self.current_window,
-                    event::WindowEvent::Ime(Ime::Preedit(
-                        text.clone(),
-                        Some((text.len(), text.len())),
-                    )),
-                    event_handler,
-                ),
-                ImeEvent::FinishPreviewEvent => self.emit_window_event(
-                    self.current_window,
-                    event::WindowEvent::Ime(Ime::Preedit(String::new(), None)),
-                    event_handler,
-                ),
+                },
+                ImeEvent::PreviewTextEvent { text, .. } => {
+                    self.window_target.p.shared.lock().ime_preedit_active = !text.is_empty();
+                    self.emit_window_event(
+                        self.current_window,
+                        event::WindowEvent::Ime(Ime::Preedit(
+                            text.clone(),
+                            Some((text.len(), text.len())),
+                        )),
+                        event_handler,
+                    );
+                },
+                ImeEvent::FinishPreviewEvent => {
+                    self.window_target.p.shared.lock().ime_preedit_active = false;
+                    self.emit_window_event(
+                        self.current_window,
+                        event::WindowEvent::Ime(Ime::Preedit(String::new(), None)),
+                        event_handler,
+                    );
+                },
                 ImeEvent::MoveCursorEvent(direction) => {
                     let key = match direction {
                         ImeDirection::Left => Some(Keycode::DpadLeft),
@@ -562,7 +570,7 @@ impl<T: 'static> EventLoop<T> {
                     if let Some(key) = key {
                         self.emit_synthetic_key(key, event_handler);
                     }
-                }
+                },
                 ImeEvent::ExtendActionEvent(action) => {
                     let key = match action {
                         ImeAction::Copy => Keycode::Copy,
@@ -595,40 +603,39 @@ impl<T: 'static> EventLoop<T> {
                             event_handler,
                         );
                     }
-                }
+                },
                 ImeEvent::SelectionEvent { start, end } => {
-                    self.window_target
-                        .p
-                        .shared
-                        .lock()
-                        .ime_edits
-                        .push(ImeEdit::Selection {
-                            start: (*start).max(0) as usize,
-                            end: (*end).max(0) as usize,
-                        });
+                    self.window_target.p.shared.lock().ime_edits.push(ImeEdit::Selection {
+                        start: (*start).max(0) as usize,
+                        end: (*end).max(0) as usize,
+                    });
                     self.emit_window_event(
                         self.current_window,
                         event::WindowEvent::Ime(Ime::Enabled),
                         event_handler,
                     );
-                }
+                },
                 ImeEvent::EnterEvent(_) => self.emit_synthetic_key(Keycode::Enter, event_handler),
                 ImeEvent::ImeStatusEvent(status) => match status {
                     KeyboardStatus::Hide => {
-                        self.window_target.p.shared.lock().ime_allowed = false;
+                        {
+                            let mut state = self.window_target.p.shared.lock();
+                            state.ime_allowed = false;
+                            state.clear_ime_reset_state();
+                        }
                         self.emit_window_event(
                             self.current_window,
                             event::WindowEvent::Ime(Ime::Disabled),
                             event_handler,
                         );
-                    }
+                    },
                     KeyboardStatus::Show => {
                         self.emit_window_event(
                             self.current_window,
                             event::WindowEvent::Ime(Ime::Enabled),
                             event_handler,
                         );
-                    }
+                    },
                     KeyboardStatus::None => trace!("Ignoring an empty OHOS IME status event"),
                 },
             },
@@ -642,14 +649,14 @@ impl<T: 'static> EventLoop<T> {
         match event {
             ArkUiInputEvent::FocusChanged(focused) => {
                 self.update_focus(*focused, event_handler);
-            }
+            },
             ArkUiInputEvent::Pointer(pointer) => {
                 self.input.last_pointer = Some(*pointer);
                 drag_drop::set_pointer(
                     crate::window::WindowId(self.current_window),
                     pointer.pointer_id,
                 );
-            }
+            },
             ArkUiInputEvent::Key(key) => {
                 key.response.consume();
                 self.sync_key_modifiers(key, event_handler);
@@ -670,20 +677,18 @@ impl<T: 'static> EventLoop<T> {
                     char::from_u32(key.unicode).filter(|ch| !ch.is_control()),
                     event_handler,
                 );
-            }
+            },
             ArkUiInputEvent::Drag(drag) => {
                 let offset = self.window_target.p.shared.lock().surface_position;
-                let events = self
-                    .window_target
-                    .p
-                    .drag_drop
-                    .lock()
-                    .unwrap()
-                    .event(crate::window::WindowId(self.current_window), drag, offset);
+                let events = self.window_target.p.drag_drop.lock().unwrap().event(
+                    crate::window::WindowId(self.current_window),
+                    drag,
+                    offset,
+                );
                 for event in events {
                     self.emit_window_event(self.current_window, event, event_handler);
                 }
-            }
+            },
             ArkUiInputEvent::Axis(event) => {
                 let mouse_wheel = event.pointer.tool_type == UIInputToolType::Mouse;
                 if mouse_wheel && event.pointer.action != UIInputAction::Move {
@@ -725,7 +730,7 @@ impl<T: 'static> EventLoop<T> {
                     },
                     event_handler,
                 );
-            }
+            },
             ArkUiInputEvent::Gesture(GestureEvent::Tap(event)) => {
                 if self.openharmony_app.touch_input_delivery()
                     != openharmony_ability::TouchInputDelivery::ArkUiGestures
@@ -752,7 +757,7 @@ impl<T: 'static> EventLoop<T> {
                     0,
                     event_handler,
                 );
-            }
+            },
             ArkUiInputEvent::Gesture(GestureEvent::Pan(event)) => {
                 self.emit_window_event(
                     self.current_window,
@@ -766,10 +771,10 @@ impl<T: 'static> EventLoop<T> {
                     },
                     event_handler,
                 );
-            }
+            },
             ArkUiInputEvent::Gesture(GestureEvent::Swipe(_)) => {
                 trace!("Ignoring an OHOS swipe event after its pan stream");
-            }
+            },
         }
     }
 
@@ -794,12 +799,10 @@ impl<T: 'static> EventLoop<T> {
                         self.emit_touch_data(motion_event, point, event_handler);
                     }
                 }
-            }
+            },
             TouchEvent::Down | TouchEvent::Up => {
-                if let Some(point) = motion_event
-                    .touch_points
-                    .iter()
-                    .find(|point| point.id == motion_event.id)
+                if let Some(point) =
+                    motion_event.touch_points.iter().find(|point| point.id == motion_event.id)
                 {
                     self.emit_touch_data(motion_event, point, event_handler);
                 } else {
@@ -813,7 +816,7 @@ impl<T: 'static> EventLoop<T> {
                         event_handler,
                     );
                 }
-            }
+            },
             TouchEvent::Unknown => trace!("Ignoring an OHOS touch event with unknown action"),
         }
     }
@@ -875,16 +878,16 @@ impl<T: 'static> EventLoop<T> {
             TouchEvent::Down => {
                 self.input.pressed_fingers.insert(raw_finger_id);
                 TouchPhase::Started
-            }
+            },
             TouchEvent::Move => TouchPhase::Moved,
             TouchEvent::Up => {
                 self.input.pressed_fingers.remove(&raw_finger_id);
                 TouchPhase::Ended
-            }
+            },
             TouchEvent::Cancel => {
                 self.input.pressed_fingers.remove(&raw_finger_id);
                 TouchPhase::Cancelled
-            }
+            },
             TouchEvent::Unknown => return,
         };
         let force = self
@@ -935,24 +938,18 @@ impl<T: 'static> EventLoop<T> {
             let north = matches!(direction, North | NorthEast | NorthWest);
             let south = matches!(direction, South | SouthEast | SouthWest);
             let min = state.min_size.unwrap_or(PhysicalSize::new(1, 1));
-            let max = state
-                .max_size
-                .unwrap_or(PhysicalSize::new(u32::MAX, u32::MAX));
+            let max = state.max_size.unwrap_or(PhysicalSize::new(u32::MAX, u32::MAX));
             if west || east {
                 size.width = (i64::from(drag.size.width)
                     + if west { -i64::from(dx) } else { i64::from(dx) })
-                .clamp(
-                    i64::from(min.width.max(1)),
-                    i64::from(max.width.max(min.width).max(1)),
-                ) as u32;
+                .clamp(i64::from(min.width.max(1)), i64::from(max.width.max(min.width).max(1)))
+                    as u32;
             }
             if north || south {
                 size.height = (i64::from(drag.size.height)
                     + if north { -i64::from(dy) } else { i64::from(dy) })
-                .clamp(
-                    i64::from(min.height.max(1)),
-                    i64::from(max.height.max(min.height).max(1)),
-                ) as u32;
+                .clamp(i64::from(min.height.max(1)), i64::from(max.height.max(min.height).max(1)))
+                    as u32;
             }
             if let Some(increments) = state.resize_increments {
                 if increments.width > 0 {
@@ -980,10 +977,7 @@ impl<T: 'static> EventLoop<T> {
             root_claimed: self.window_target.p.root_claimed.clone(),
             owns_window: false,
         };
-        window.submit_geometry(GeometryTarget {
-            position: origin,
-            size: resize.map(|_| size),
-        });
+        window.submit_geometry(GeometryTarget { position: origin, size: resize.map(|_| size) });
     }
 
     fn handle_mouse_event<F>(&mut self, mouse_event: &MouseEventData, event_handler: &mut F)
@@ -992,16 +986,13 @@ impl<T: 'static> EventLoop<T> {
     {
         let device_id = DeviceId::dummy();
         let position = PhysicalPosition::new(f64::from(mouse_event.x), f64::from(mouse_event.y));
-        self.update_window_drag(
-            position,
-            matches!(mouse_event.action, OhosMouseAction::Release),
-        );
+        self.update_window_drag(position, matches!(mouse_event.action, OhosMouseAction::Release));
 
         match mouse_event.action {
             OhosMouseAction::Press | OhosMouseAction::Release | OhosMouseAction::Move => {
                 self.ensure_mouse_entered(device_id, event_handler);
-            }
-            _ => {}
+            },
+            _ => {},
         }
 
         match mouse_event.action {
@@ -1025,7 +1016,7 @@ impl<T: 'static> EventLoop<T> {
                     },
                     event_handler,
                 );
-            }
+            },
             OhosMouseAction::Press | OhosMouseAction::Release => {
                 self.input.last_mouse_position = Some(position);
                 self.emit_window_event(
@@ -1041,7 +1032,7 @@ impl<T: 'static> EventLoop<T> {
                     },
                     event_handler,
                 );
-            }
+            },
             _ => trace!("Ignoring an OHOS mouse event with no actionable state"),
         }
     }
@@ -1057,9 +1048,7 @@ impl<T: 'static> EventLoop<T> {
         self.window_target.p.shared.lock().invalidate_cursor();
         self.emit_window_event(
             self.current_window,
-            event::WindowEvent::CursorEntered {
-                device_id: crate::event::DeviceId(device_id),
-            },
+            event::WindowEvent::CursorEntered { device_id: crate::event::DeviceId(device_id) },
             event_handler,
         );
     }
@@ -1069,14 +1058,7 @@ impl<T: 'static> EventLoop<T> {
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop) + ?Sized,
     {
         for state in [ElementState::Pressed, ElementState::Released] {
-            self.emit_key_event(
-                keycode,
-                state,
-                DeviceId::dummy(),
-                false,
-                true,
-                event_handler,
-            );
+            self.emit_key_event(keycode, state, DeviceId::dummy(), false, true, event_handler);
         }
     }
 
@@ -1167,10 +1149,7 @@ impl<T: 'static> EventLoop<T> {
         if !is_synthetic {
             self.emit_device_event(
                 device_id,
-                DeviceEvent::Key(RawKeyEvent {
-                    physical_key,
-                    state,
-                }),
+                DeviceEvent::Key(RawKeyEvent { physical_key, state }),
                 event_handler,
             );
         }
@@ -1220,10 +1199,9 @@ impl<T: 'static> EventLoop<T> {
                     .input
                     .modifier_keys
                     .intersects(ModifiersKeys::LSHIFT | ModifiersKeys::RSHIFT),
-                ModifiersState::ALT => self
-                    .input
-                    .modifier_keys
-                    .intersects(ModifiersKeys::LALT | ModifiersKeys::RALT),
+                ModifiersState::ALT => {
+                    self.input.modifier_keys.intersects(ModifiersKeys::LALT | ModifiersKeys::RALT)
+                },
                 ModifiersState::CONTROL => self
                     .input
                     .modifier_keys
@@ -1238,11 +1216,9 @@ impl<T: 'static> EventLoop<T> {
                 self.input.modifiers.remove(state_flag);
             }
         }
-        (before_state != self.input.modifiers || before_keys != self.input.modifier_keys)
-            .then_some(Modifiers {
-                state: self.input.modifiers,
-                pressed_mods: self.input.modifier_keys,
-            })
+        (before_state != self.input.modifiers || before_keys != self.input.modifier_keys).then_some(
+            Modifiers { state: self.input.modifiers, pressed_mods: self.input.modifier_keys },
+        )
     }
 
     pub fn run<F>(mut self, event_handler: F) -> Result<(), EventLoopError>
@@ -1310,9 +1286,7 @@ impl<T: 'static> EventLoop<T> {
     fn sync_frame_delivery(&self) {
         for (id, shared) in self.registered_windows() {
             shared.frame.invalidate_delivery();
-            shared
-                .frame
-                .sync_delivery(&self.openharmony_app, id.into_raw() as i64);
+            shared.frame.sync_delivery(&self.openharmony_app, id.into_raw() as i64);
         }
     }
 
@@ -1331,14 +1305,7 @@ impl<T: 'static> EventLoop<T> {
     }
 
     fn request_window_redraw(&self, id: WindowId) {
-        let shared = self
-            .window_target
-            .p
-            .windows
-            .lock()
-            .unwrap()
-            .get(&id)
-            .cloned();
+        let shared = self.window_target.p.windows.lock().unwrap().get(&id).cloned();
         if let Some(shared) = shared {
             shared.request_redraw();
         }
@@ -1355,14 +1322,7 @@ impl<T: 'static> EventLoop<T> {
     where
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop) + ?Sized,
     {
-        let shared = self
-            .window_target
-            .p
-            .windows
-            .lock()
-            .unwrap()
-            .get(&id)
-            .cloned();
+        let shared = self.window_target.p.windows.lock().unwrap().get(&id).cloned();
         let Some(shared) = shared else {
             return;
         };
@@ -1370,6 +1330,7 @@ impl<T: 'static> EventLoop<T> {
             let mut state = shared.lock();
             let events = state.lifecycle.close();
             state.dragging = None;
+            state.clear_ime_reset_state();
             shared.sync_active(&state);
             events
         };
@@ -1408,25 +1369,11 @@ impl<T: 'static> EventLoop<T> {
             _ => 0,
         };
         let id = WindowId::from_raw(id as usize);
-        let shared = self
-            .window_target
-            .p
-            .windows
-            .lock()
-            .unwrap()
-            .get(&id)
-            .cloned();
+        let shared = self.window_target.p.windows.lock().unwrap().get(&id).cloned();
         if let Some(shared) = shared {
             if self.current_window != id {
                 let old_input = std::mem::take(&mut self.input);
-                if self
-                    .window_target
-                    .p
-                    .windows
-                    .lock()
-                    .unwrap()
-                    .contains_key(&self.current_window)
-                {
+                if self.window_target.p.windows.lock().unwrap().contains_key(&self.current_window) {
                     self.input_states.insert(self.current_window, old_input);
                 }
                 self.input = self.input_states.remove(&id).unwrap_or_default();
@@ -1467,14 +1414,7 @@ impl<T: 'static> EventLoop<T> {
                 continue;
             };
             let id = WindowId::from_raw(id as usize);
-            let shared = self
-                .window_target
-                .p
-                .windows
-                .lock()
-                .unwrap()
-                .get(&id)
-                .cloned();
+            let shared = self.window_target.p.windows.lock().unwrap().get(&id).cloned();
             if let Some(shared) = shared {
                 let (changed, occluded, restored) = {
                     let mut state = shared.lock();
@@ -1502,11 +1442,7 @@ impl<T: 'static> EventLoop<T> {
             let id = WindowId::from_raw(id as usize);
             if id == GLOBAL_WINDOW {
                 if self.window_target.p.windows.lock().unwrap().contains_key(&id) {
-                    self.emit_window_event(
-                        id,
-                        event::WindowEvent::CloseRequested,
-                        event_handler,
-                    );
+                    self.emit_window_event(id, event::WindowEvent::CloseRequested, event_handler);
                 }
             } else {
                 self.close_window(id, event_handler);
@@ -1532,6 +1468,23 @@ impl<T: 'static> EventLoop<T> {
         {
             self.handle_main_event(event, event_handler);
         }
+        for (id, shared) in self.registered_windows() {
+            loop {
+                let next_event = {
+                    let mut state = shared.lock();
+                    if state.can_reset_ime() {
+                        state.pending_ime_events.pop_front()
+                    } else {
+                        state.pending_ime_events.clear();
+                        None
+                    }
+                };
+                let Some(next_event) = next_event else {
+                    break;
+                };
+                self.emit_window_event(id, next_event, event_handler);
+            }
+        }
         while let Ok(user_event) = self.user_events_receiver.try_recv() {
             event_handler(event::Event::UserEvent(user_event), &self.window_target);
         }
@@ -1544,30 +1497,19 @@ impl<T: 'static> EventLoop<T> {
             for (id, shared) in &windows {
                 let id = *id;
                 let tick = if user_turn {
-                    shared
-                        .frame
-                        .sync_delivery(&self.openharmony_app, id.into_raw() as i64);
+                    shared.frame.sync_delivery(&self.openharmony_app, id.into_raw() as i64);
                     shared.frame.take_pending()
                 } else {
                     fallback_tick == Some(id) && !shared.frame.healthy()
                 };
                 let redraw = {
                     let mut state = shared.lock();
-                    let WindowState {
-                        lifecycle,
-                        visible,
-                        minimized,
-                        redraw_pending,
-                        ..
-                    } = &mut *state;
+                    let WindowState { lifecycle, visible, minimized, redraw_pending, .. } =
+                        &mut *state;
                     lifecycle.take_redraw(tick, *visible, *minimized, redraw_pending)
                 };
                 if redraw {
-                    self.emit_window_event(
-                        id,
-                        event::WindowEvent::RedrawRequested,
-                        event_handler,
-                    );
+                    self.emit_window_event(id, event::WindowEvent::RedrawRequested, event_handler);
                     let mut state = shared.lock();
                     if state.presentable() && state.resize_settle.active(Instant::now()) {
                         state.redraw_pending = true;
@@ -1586,9 +1528,7 @@ impl<T: 'static> EventLoop<T> {
             return;
         }
         self.wait_started = Instant::now();
-        let presentable = windows
-            .into_iter()
-            .find(|(_, shared)| shared.lock().presentable());
+        let presentable = windows.into_iter().find(|(_, shared)| shared.lock().presentable());
         use control_flow::{control_flow_action, Action, ControlFlow as Policy};
         let flow = match self.window_target.p.control_flow() {
             ControlFlow::Wait => Policy::Wait,
@@ -1601,7 +1541,7 @@ impl<T: 'static> EventLoop<T> {
             Action::Wake => {
                 self.timer.set_deadline(None);
                 self.window_target.p.main_wake.notify();
-            }
+            },
             Action::Frame => {
                 self.timer.set_deadline(None);
                 if let Some((_, shared)) = presentable {
@@ -1610,7 +1550,7 @@ impl<T: 'static> EventLoop<T> {
                         shared.frame.request_frame();
                     }
                 }
-            }
+            },
         }
     }
 
@@ -1623,8 +1563,8 @@ impl<T: 'static> EventLoop<T> {
             MainEvent::SurfaceDestroy => self.surface_destroyed(event_handler, false),
             MainEvent::WindowResize { size, .. } => {
                 self.update_surface_size(physical_size(size.width, size.height), event_handler)
-            }
-            MainEvent::WindowRedraw(_) => {}
+            },
+            MainEvent::WindowRedraw(_) => {},
             MainEvent::ContentRectChange(content) => {
                 let position = PhysicalPosition::new(content.rect.left, content.rect.top);
                 let outer_size = physical_size(content.rect.width, content.rect.height);
@@ -1652,7 +1592,7 @@ impl<T: 'static> EventLoop<T> {
                 if resized {
                     self.window_target.p.shared.request_redraw();
                 }
-            }
+            },
             MainEvent::AvoidAreaChange(_) => self.request_window_redraw(self.current_window),
             MainEvent::KeyboardEvent(_) => self.request_window_redraw(GLOBAL_WINDOW),
             MainEvent::TextInputReadyChanged { window_id, ready } => {
@@ -1661,29 +1601,29 @@ impl<T: 'static> EventLoop<T> {
                         warn!("Cannot show OHOS keyboard after TextInputReadyChanged: {error}");
                     }
                 }
-            }
+            },
             MainEvent::WindowFocusChanged { focused, .. } => {
                 self.update_focus(focused, event_handler)
-            }
+            },
             MainEvent::GainedFocus => self.update_focus(true, event_handler),
             MainEvent::LostFocus => self.update_focus(false, event_handler),
             MainEvent::ConfigChanged(configuration) => {
                 self.update_configuration(&configuration, event_handler)
-            }
+            },
             MainEvent::LowMemory => {
                 event_handler(event::Event::MemoryWarning, &self.window_target);
-            }
+            },
             MainEvent::Start => self.update_visibility(true, event_handler),
             MainEvent::Resume(_) => {
                 self.update_visibility(true, event_handler);
                 if self.surface_available {
                     self.ensure_resumed(event_handler);
                 }
-            }
+            },
             MainEvent::Pause => trace!("OHOS Ability paused"),
             MainEvent::Stop => {
                 self.update_visibility(false, event_handler);
-            }
+            },
             MainEvent::WindowDestroy => self.emit_window_event(
                 self.current_window,
                 event::WindowEvent::CloseRequested,
@@ -1700,10 +1640,10 @@ impl<T: 'static> EventLoop<T> {
                     self.window_target.p.windows.lock().unwrap().remove(&id);
                 }
                 self.window_target.p.exit();
-            }
+            },
             MainEvent::Input(input_event) => self.handle_input_event(&input_event, event_handler),
-            MainEvent::Create | MainEvent::WindowCreate | MainEvent::SaveState(_) => {}
-            MainEvent::UserEvent => {}
+            MainEvent::Create | MainEvent::WindowCreate | MainEvent::SaveState(_) => {},
+            MainEvent::UserEvent => {},
             MainEvent::SubWindowSurfaceCreate(_) => {
                 {
                     let mut state = self.window_target.p.shared.lock();
@@ -1738,16 +1678,17 @@ impl<T: 'static> EventLoop<T> {
                     event_handler,
                 );
                 self.window_target.p.shared.request_redraw();
-            }
+            },
             MainEvent::SubWindowInput { event, .. } => {
                 self.handle_input_event(&event, event_handler)
-            }
-            MainEvent::SubWindowRedraw { .. } => {}
+            },
+            MainEvent::SubWindowRedraw { .. } => {},
             MainEvent::SubWindowSurfaceDestroy(_) => {
                 let destroyed = {
                     let mut state = self.window_target.p.shared.lock();
                     let events = state.lifecycle.surface_destroyed();
                     state.dragging = None;
+                    state.clear_ime_reset_state();
                     self.window_target.p.shared.sync_active(&state);
                     events.destroyed
                 };
@@ -1760,14 +1701,9 @@ impl<T: 'static> EventLoop<T> {
                         event::WindowEvent::Destroyed,
                         event_handler,
                     );
-                    self.window_target
-                        .p
-                        .windows
-                        .lock()
-                        .unwrap()
-                        .remove(&self.current_window);
+                    self.window_target.p.windows.lock().unwrap().remove(&self.current_window);
                 }
-            }
+            },
             MainEvent::SubWindowClosed(_) => self.close_window(self.current_window, event_handler),
             MainEvent::NewWant { uri } => {
                 events::emit(events::PlatformEvent::Want {
@@ -1775,7 +1711,7 @@ impl<T: 'static> EventLoop<T> {
                     parameters: self.openharmony_app.take_want_parameters(),
                 });
                 self.request_window_redraw(GLOBAL_WINDOW);
-            }
+            },
         }
     }
 
@@ -1812,12 +1748,10 @@ impl<T: 'static> EventLoop<T> {
     }
 
     fn synchronize_window_state(&self) {
-        let content_rect = self
-            .openharmony_app
-            .content_rect_for(self.current_window.into_raw() as i64);
-        let window_rect = self
-            .openharmony_app
-            .window_rect_for(self.current_window.into_raw() as i64);
+        let content_rect =
+            self.openharmony_app.content_rect_for(self.current_window.into_raw() as i64);
+        let window_rect =
+            self.openharmony_app.window_rect_for(self.current_window.into_raw() as i64);
         let surface_size = physical_size(content_rect.width, content_rect.height);
         let outer_size = physical_size(window_rect.width, window_rect.height);
         let mut state = self.window_target.p.shared.lock();
@@ -1855,6 +1789,7 @@ impl<T: 'static> EventLoop<T> {
             state.lifecycle.surface_available = false;
             state.surface_size = PhysicalSize::new(0, 0);
             state.dragging = None;
+            state.clear_ime_reset_state();
             shared.sync_active(&state);
             shared.geometry.cancel();
             drop(state);
@@ -1963,9 +1898,8 @@ impl<T: 'static> EventLoop<T> {
     where
         F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop) + ?Sized,
     {
-        let content_rect = self
-            .openharmony_app
-            .content_rect_for(self.current_window.into_raw() as i64);
+        let content_rect =
+            self.openharmony_app.content_rect_for(self.current_window.into_raw() as i64);
         let size = nonzero_size_or(physical_size(content_rect.width, content_rect.height), size);
         let changed = {
             let mut state = self.window_target.p.shared.lock();
@@ -2005,9 +1939,7 @@ impl<T: 'static> EventLoop<T> {
                 state.display_id = state
                     .real_window_id
                     .and_then(|wid| {
-                        ohos_window_manager_binding::Window::from_id(wid)
-                            .properties()
-                            .ok()
+                        ohos_window_manager_binding::Window::from_id(wid).properties().ok()
                     })
                     .map(|p| u64::from(p.display_id))
                     .or(config_display_id);
@@ -2056,9 +1988,7 @@ impl<T: 'static> Clone for EventLoopProxy<T> {
 
 impl<T: 'static> EventLoopProxy<T> {
     pub fn send_event(&self, event: T) -> Result<(), event_loop::EventLoopClosed<T>> {
-        self.user_events_sender
-            .send(event)
-            .map_err(|err| event_loop::EventLoopClosed(err.0))?;
+        self.user_events_sender.send(event).map_err(|err| event_loop::EventLoopClosed(err.0))?;
         self.main_wake.notify();
         Ok(())
     }
@@ -2078,9 +2008,7 @@ pub struct ActiveEventLoop {
 
 impl ActiveEventLoop {
     pub fn create_custom_cursor(&self, source: CustomCursorSource) -> CustomCursor {
-        CustomCursor {
-            inner: PlatformCustomCursor(Arc::new(source.inner.0)),
-        }
+        CustomCursor { inner: PlatformCustomCursor(Arc::new(source.inner.0)) }
     }
 
     pub fn available_monitors(&self) -> VecDeque<MonitorHandle> {
@@ -2132,9 +2060,7 @@ impl ActiveEventLoop {
     pub fn raw_display_handle_rwh_06(
         &self,
     ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::RawDisplayHandle::Ohos(
-            rwh_06::OhosDisplayHandle::new(),
-        ))
+        Ok(rwh_06::RawDisplayHandle::Ohos(rwh_06::OhosDisplayHandle::new()))
     }
 }
 
@@ -2202,18 +2128,10 @@ impl Window {
             WindowId::from_raw(id as usize)
         };
         let shared = if root {
-            el.windows
-                .lock()
-                .unwrap()
-                .get(&GLOBAL_WINDOW)
-                .unwrap()
-                .clone()
+            el.windows.lock().unwrap().get(&GLOBAL_WINDOW).unwrap().clone()
         } else {
-            let shared = Arc::new(SharedWindowState::new(
-                &el.app,
-                id.into_raw() as i64,
-                el.visible.get(),
-            ));
+            let shared =
+                Arc::new(SharedWindowState::new(&el.app, id.into_raw() as i64, el.visible.get()));
             shared.frame.sync_delivery(&el.app, id.into_raw() as i64);
             shared.lock().scale_factor = scale_factor(&el.app);
             el.windows.lock().unwrap().insert(id, shared.clone());
@@ -2275,11 +2193,7 @@ impl Window {
             let id = client.get_real_window_id(id).await?;
             let real_id = i32::try_from(id).ok();
             let display_id = real_id
-                .and_then(|wid| {
-                    ohos_window_manager_binding::Window::from_id(wid)
-                        .properties()
-                        .ok()
-                })
+                .and_then(|wid| ohos_window_manager_binding::Window::from_id(wid).properties().ok())
                 .map(|p| u64::from(p.display_id));
             let mut locked = state.lock();
             locked.real_window_id = real_id;
@@ -2339,14 +2253,8 @@ impl Window {
                         let border = {
                             let state = shared.lock();
                             PhysicalSize::new(
-                                state
-                                    .outer_size
-                                    .width
-                                    .saturating_sub(state.surface_size.width),
-                                state
-                                    .outer_size
-                                    .height
-                                    .saturating_sub(state.surface_size.height),
+                                state.outer_size.width.saturating_sub(state.surface_size.width),
+                                state.outer_size.height.saturating_sub(state.surface_size.height),
                             )
                         };
                         client
@@ -2417,9 +2325,7 @@ impl Window {
                 state.display_id = state
                     .real_window_id
                     .and_then(|id| {
-                        ohos_window_manager_binding::Window::from_id(id)
-                            .properties()
-                            .ok()
+                        ohos_window_manager_binding::Window::from_id(id).properties().ok()
                     })
                     .map(|p| u64::from(p.display_id));
             }
@@ -2452,9 +2358,7 @@ impl Window {
     pub fn set_outer_position(&self, position: Position) {
         let position = position.to_physical::<i32>(self.scale_factor());
         self.command("move window", move |client, _, id| async move {
-            client
-                .move_window_to(id, position.x.into(), position.y.into())
-                .await
+            client.move_window_to(id, position.x.into(), position.y.into()).await
         });
     }
 
@@ -2466,14 +2370,8 @@ impl Window {
         let size = size.to_physical::<u32>(self.scale_factor());
         let state = self.shared.lock();
         let border = PhysicalSize::new(
-            state
-                .outer_size
-                .width
-                .saturating_sub(state.surface_size.width),
-            state
-                .outer_size
-                .height
-                .saturating_sub(state.surface_size.height),
+            state.outer_size.width.saturating_sub(state.surface_size.width),
+            state.outer_size.height.saturating_sub(state.surface_size.height),
         );
         drop(state);
         self.command("resize window", move |client, _, id| async move {
@@ -2524,17 +2422,13 @@ impl Window {
 
     pub fn set_transparent(&self, transparent: bool) {
         self.command("window background", move |client, _, id| async move {
-            client
-                .set_window_background_color(id, if transparent { 0 } else { 0xff000000 })
-                .await
+            client.set_window_background_color(id, if transparent { 0 } else { 0xff000000 }).await
         });
     }
 
     pub fn set_blur(&self, blur: bool) {
         self.command("window blur", move |client, _, id| async move {
-            client
-                .set_window_blur(id, if blur { 30.0 } else { 0.0 })
-                .await
+            client.set_window_blur(id, if blur { 30.0 } else { 0.0 }).await
         });
     }
 
@@ -2627,9 +2521,7 @@ impl Window {
 
     pub fn set_window_level(&self, level: WindowLevel) {
         self.command("window level", move |client, _, id| async move {
-            client
-                .set_window_topmost(id, level == WindowLevel::AlwaysOnTop)
-                .await
+            client.set_window_topmost(id, level == WindowLevel::AlwaysOnTop).await
         });
     }
 
@@ -2660,11 +2552,7 @@ impl Window {
         };
         self.command("window icon", move |client, _, id| async move {
             client
-                .set_window_icon(plugins::window::WindowIconRequest {
-                    window_id: id,
-                    size,
-                    rgba,
-                })
+                .set_window_icon(plugins::window::WindowIconRequest { window_id: id, size, rgba })
                 .await
         });
     }
@@ -2682,16 +2570,19 @@ impl Window {
         };
         drop(state);
         self.shared.lock().ime_cursor_area = Some((position, size));
-        if let Err(error) = self
-            .app
-            .update_ime_cursor_for(self.id.into_raw() as i64, rect)
-        {
+        if let Err(error) = self.app.update_ime_cursor_for(self.id.into_raw() as i64, rect) {
             warn!("Cannot position OHOS IME: {error}");
         }
     }
 
     pub fn set_ime_allowed(&self, allowed: bool) {
-        self.shared.lock().ime_allowed = allowed;
+        {
+            let mut state = self.shared.lock();
+            state.ime_allowed = allowed;
+            if !allowed {
+                state.clear_ime_reset_state();
+            }
+        }
         let window_id = self.id.into_raw() as i64;
         if allowed {
             if let Err(error) = self.app.try_show_keyboard_for(window_id) {
@@ -2709,13 +2600,68 @@ impl Window {
             ImePurpose::Password => InputType::VisiblePassword,
             _ => InputType::Text,
         };
-        if let Err(error) = self.app.configure_ime_for(
-            self.id.into_raw() as i64,
-            EnterKey::Done,
-            input_type,
-        ) {
+        if let Err(error) =
+            self.app.configure_ime_for(self.id.into_raw() as i64, EnterKey::Done, input_type)
+        {
             warn!("Cannot configure OHOS IME: {error}");
         }
+    }
+
+    pub fn reset_ime(&self) {
+        let _ = self.reset_ime_inner(None);
+    }
+
+    pub fn reset_ime_with_request(&self, request_id: u64) {
+        let _ = self.reset_ime_inner(Some(request_id));
+    }
+
+    fn reset_ime_inner(&self, request_id: Option<u64>) -> bool {
+        let (allowed, purpose, cursor_area, surrounding) = {
+            let state = self.shared.lock();
+            (
+                state.can_reset_ime(),
+                state.ime_purpose,
+                state.ime_cursor_area,
+                state.ime_surrounding_text.clone(),
+            )
+        };
+        if !allowed {
+            return false;
+        }
+        let window_id = self.id.into_raw() as i64;
+        if let Err(error) = self.app.reset_ime_for(window_id) {
+            warn!("Cannot reset OHOS IME: {error}");
+            return false;
+        }
+        self.set_ime_purpose(purpose);
+        if let Some((position, size)) = cursor_area {
+            self.set_ime_cursor_area(position, size);
+        }
+        if let Some((text, cursor, anchor)) = surrounding {
+            self.set_ime_surrounding_text(text, cursor, anchor);
+        }
+        let queued = {
+            let mut state = self.shared.lock();
+            if !state.can_reset_ime() {
+                return false;
+            }
+            let had_preedit = std::mem::replace(&mut state.ime_preedit_active, false);
+            if had_preedit {
+                state
+                    .pending_ime_events
+                    .push_back(event::WindowEvent::Ime(Ime::Preedit(String::new(), None)));
+            }
+            if let Some(request_id) = request_id {
+                state
+                    .pending_ime_events
+                    .push_back(event::WindowEvent::ImeResetCompleted { request_id });
+            }
+            had_preedit || request_id.is_some()
+        };
+        if queued {
+            frame::main_wake(&self.app).notify();
+        }
+        true
     }
 
     pub fn set_ime_surrounding_text(&self, text: String, cursor: usize, anchor: usize) {
@@ -2736,9 +2682,7 @@ impl Window {
     }
 
     pub fn focus_window(&self) {
-        self.command("focus window", |client, _, id| async move {
-            client.focus_window(id).await
-        });
+        self.command("focus window", |client, _, id| async move { client.focus_window(id).await });
     }
 
     pub fn request_user_attention(&self, request_type: Option<window::UserAttentionType>) {
@@ -2757,7 +2701,7 @@ impl Window {
                     return;
                 }
                 CursorKey::Custom(custom.clone())
-            }
+            },
         };
         let generation = {
             let mut state = self.shared.lock();
@@ -2789,7 +2733,7 @@ impl Window {
                                 hotspot_y: u32::from(image.hotspot_y),
                             })
                             .await
-                    }
+                    },
                 }
             }
             .await;
@@ -2800,28 +2744,25 @@ impl Window {
                     if state.cursor_pending.as_ref() == Some(&key) {
                         state.cursor_pending = None;
                     }
-                }
+                },
                 Err(error) => {
                     state.invalidate_cursor();
                     warn!("OHOS cursor: {error}");
-                }
-                _ => {}
+                },
+                _ => {},
             }
         });
     }
 
     pub fn set_cursor_position(&self, _: Position) -> Result<(), error::ExternalError> {
-        Err(error::ExternalError::NotSupported(
-            error::NotSupportedError::new(),
-        ))
+        Err(error::ExternalError::NotSupported(error::NotSupportedError::new()))
     }
 
     pub fn set_cursor_grab(&self, mode: CursorGrabMode) -> Result<(), error::ExternalError> {
-        let id = self
-            .shared
-            .lock()
-            .real_window_id
-            .ok_or_else(|| error::ExternalError::NotSupported(error::NotSupportedError::new()))?;
+        let id =
+            self.shared.lock().real_window_id.ok_or_else(|| {
+                error::ExternalError::NotSupported(error::NotSupportedError::new())
+            })?;
         let window = ohos_window_manager_binding::Window::from_id(id);
         let result = match mode {
             CursorGrabMode::None => window.unlock_cursor(),
@@ -2858,9 +2799,7 @@ impl Window {
         direction: ResizeDirection,
     ) -> Result<(), error::ExternalError> {
         if !self.is_resizable() {
-            return Err(error::ExternalError::NotSupported(
-                error::NotSupportedError::new(),
-            ));
+            return Err(error::ExternalError::NotSupported(error::NotSupportedError::new()));
         }
         self.drag_window()?;
         if let Some(drag) = &mut self.shared.lock().dragging {
@@ -2890,12 +2829,7 @@ impl Window {
                         buttons: vec![
                             "Minimize".into(),
                             if maximized { "Restore" } else { "Maximize" }.into(),
-                            if fullscreen {
-                                "Leave fullscreen"
-                            } else {
-                                "Fullscreen"
-                            }
-                            .into(),
+                            if fullscreen { "Leave fullscreen" } else { "Fullscreen" }.into(),
                             "Close".into(),
                             "Cancel".into(),
                         ],
@@ -2917,8 +2851,8 @@ impl Window {
                         }
                         openharmony_ability::notify_window_close(id as i32);
                         frame::main_wake(&app).notify();
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
                 Ok::<_, openharmony_ability::napi_ohos::Error>(())
             }
@@ -3052,9 +2986,7 @@ impl Window {
     pub fn raw_display_handle_rwh_06(
         &self,
     ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::RawDisplayHandle::Ohos(
-            rwh_06::OhosDisplayHandle::new(),
-        ))
+        Ok(rwh_06::RawDisplayHandle::Ohos(rwh_06::OhosDisplayHandle::new()))
     }
 }
 
@@ -3064,6 +2996,7 @@ impl Drop for Window {
             return;
         }
         if self.id == GLOBAL_WINDOW {
+            self.shared.lock().clear_ime_reset_state();
             self.root_claimed.store(false, Ordering::Release);
         } else {
             {
@@ -3073,6 +3006,7 @@ impl Drop for Window {
                 }
                 state.lifecycle.dropped_by_app = true;
                 state.dragging = None;
+                state.clear_ime_reset_state();
                 self.shared.sync_active(&state);
                 self.shared.geometry.cancel();
             }
@@ -3164,17 +3098,12 @@ fn start_cause(control_flow: ControlFlow, start: Instant) -> StartCause {
     let now = Instant::now();
     match control_flow {
         ControlFlow::Poll => StartCause::Poll,
-        ControlFlow::Wait => StartCause::WaitCancelled {
-            start,
-            requested_resume: None,
+        ControlFlow::Wait => StartCause::WaitCancelled { start, requested_resume: None },
+        ControlFlow::WaitUntil(deadline) if now >= deadline => {
+            StartCause::ResumeTimeReached { start, requested_resume: deadline }
         },
-        ControlFlow::WaitUntil(deadline) if now >= deadline => StartCause::ResumeTimeReached {
-            start,
-            requested_resume: deadline,
-        },
-        ControlFlow::WaitUntil(deadline) => StartCause::WaitCancelled {
-            start,
-            requested_resume: Some(deadline),
+        ControlFlow::WaitUntil(deadline) => {
+            StartCause::WaitCancelled { start, requested_resume: Some(deadline) }
         },
     }
 }
@@ -3204,39 +3133,18 @@ mod tests {
 
     #[test]
     fn arkui_input_phases_map_to_winit_phases() {
-        assert_eq!(
-            touch_phase_from_arkui(UIInputAction::Down),
-            TouchPhase::Started
-        );
-        assert_eq!(
-            touch_phase_from_arkui(UIInputAction::Move),
-            TouchPhase::Moved
-        );
+        assert_eq!(touch_phase_from_arkui(UIInputAction::Down), TouchPhase::Started);
+        assert_eq!(touch_phase_from_arkui(UIInputAction::Move), TouchPhase::Moved);
         assert_eq!(touch_phase_from_arkui(UIInputAction::Up), TouchPhase::Ended);
-        assert_eq!(
-            touch_phase_from_arkui(UIInputAction::Cancel),
-            TouchPhase::Cancelled
-        );
+        assert_eq!(touch_phase_from_arkui(UIInputAction::Cancel), TouchPhase::Cancelled);
     }
 
     #[test]
     fn arkui_gesture_phases_map_to_winit_phases() {
-        assert_eq!(
-            touch_phase_from_gesture(OhosGesturePhase::Start),
-            TouchPhase::Started
-        );
-        assert_eq!(
-            touch_phase_from_gesture(OhosGesturePhase::Update),
-            TouchPhase::Moved
-        );
-        assert_eq!(
-            touch_phase_from_gesture(OhosGesturePhase::End),
-            TouchPhase::Ended
-        );
-        assert_eq!(
-            touch_phase_from_gesture(OhosGesturePhase::Cancel),
-            TouchPhase::Cancelled
-        );
+        assert_eq!(touch_phase_from_gesture(OhosGesturePhase::Start), TouchPhase::Started);
+        assert_eq!(touch_phase_from_gesture(OhosGesturePhase::Update), TouchPhase::Moved);
+        assert_eq!(touch_phase_from_gesture(OhosGesturePhase::End), TouchPhase::Ended);
+        assert_eq!(touch_phase_from_gesture(OhosGesturePhase::Cancel), TouchPhase::Cancelled);
     }
 
     #[test]

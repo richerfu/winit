@@ -8,9 +8,7 @@ pub(crate) fn stylus_force(pen: StylusInputData) -> Option<Force> {
         return None;
     }
     let pressure = f64::from(pen.pressure.clamp(0.0, 1.0));
-    if pen.tilt_x.is_finite()
-        && pen.tilt_y.is_finite()
-        && (pen.tilt_x != 0.0 || pen.tilt_y != 0.0)
+    if pen.tilt_x.is_finite() && pen.tilt_y.is_finite() && (pen.tilt_x != 0.0 || pen.tilt_y != 0.0)
     {
         let tx = f64::from(pen.tilt_x.clamp(-90.0, 90.0)).to_radians();
         let ty = f64::from(pen.tilt_y.clamp(-90.0, 90.0)).to_radians();

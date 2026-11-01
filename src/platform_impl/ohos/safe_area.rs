@@ -14,16 +14,8 @@ pub(crate) fn edge_insets(
     let end = start + len;
     let avoid_start = i64::from(avoid_start);
     let avoid_end = avoid_start + i64::from(avoid_len);
-    let near = if avoid_start <= start {
-        (avoid_end - start).clamp(0, len)
-    } else {
-        0
-    };
-    let far = if avoid_end >= end {
-        (end - avoid_start).clamp(0, len)
-    } else {
-        0
-    };
+    let near = if avoid_start <= start { (avoid_end - start).clamp(0, len) } else { 0 };
+    let far = if avoid_end >= end { (end - avoid_start).clamp(0, len) } else { 0 };
     (near as u32, far as u32)
 }
 

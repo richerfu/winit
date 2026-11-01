@@ -40,14 +40,14 @@ pub fn persist_paths(uris: &[String], writable: bool) -> Result<Vec<PathBuf>, St
                 match permissions::activate_permission(&policies) {
                     Ok(failed) if !failed.is_empty() => {
                         tracing::warn!("Cannot activate selected file permissions: {failed:?}")
-                    }
+                    },
                     Err(error) => {
                         tracing::warn!("Cannot activate selected file permissions: {error}")
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
-        }
+        },
         Err(error) => tracing::warn!("Cannot persist selected file permissions: {error}"),
     }
     Ok(paths)

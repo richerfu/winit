@@ -36,10 +36,7 @@ pub fn subscribe() -> mpsc::Receiver<PlatformEvent> {
 }
 
 pub(crate) fn emit(event: PlatformEvent) {
-    subscribers()
-        .lock()
-        .unwrap()
-        .retain(|tx| tx.send(event.clone()).is_ok());
+    subscribers().lock().unwrap().retain(|tx| tx.send(event.clone()).is_ok());
     PENDING.store(true, Ordering::Release);
 }
 

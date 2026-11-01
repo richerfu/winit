@@ -56,7 +56,7 @@ impl Timer {
                                         drop(state);
                                         wake();
                                         state = lock.lock().unwrap();
-                                    }
+                                    },
                                     Some(deadline) => {
                                         state = changed
                                             .wait_timeout(
@@ -65,7 +65,7 @@ impl Timer {
                                             )
                                             .unwrap()
                                             .0;
-                                    }
+                                    },
                                     None => state = changed.wait(state).unwrap(),
                                 }
                             }

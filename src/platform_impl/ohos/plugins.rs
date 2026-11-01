@@ -25,10 +25,7 @@ pub use openharmony_ability_plugin_process as process;
 pub use openharmony_ability_plugin_system_state as system_state;
 
 pub(crate) fn register_enabled(app: &OpenHarmonyApp) -> openharmony_ability::napi_ohos::Result<()> {
-    if app
-        .registered_plugin::<window::WindowBridgePlugin>()?
-        .is_none()
-    {
+    if app.registered_plugin::<window::WindowBridgePlugin>()?.is_none() {
         app.register_plugin(window::WindowBridgePlugin)?;
     }
 
@@ -39,32 +36,17 @@ pub(crate) fn register_enabled(app: &OpenHarmonyApp) -> openharmony_ability::nap
             }
         };
     }
-    register!(
-        clipboard::ClipboardBridgePlugin::default(),
-        clipboard::ClipboardBridgePlugin
-    );
+    register!(clipboard::ClipboardBridgePlugin::default(), clipboard::ClipboardBridgePlugin);
     register!(url::UrlBridgePlugin, url::UrlBridgePlugin);
     register!(files::FilesBridgePlugin, files::FilesBridgePlugin);
-    register!(
-        app_control::AppControlBridgePlugin,
-        app_control::AppControlBridgePlugin
-    );
-    register!(
-        permission::PermissionBridgePlugin,
-        permission::PermissionBridgePlugin
-    );
+    register!(app_control::AppControlBridgePlugin, app_control::AppControlBridgePlugin);
+    register!(permission::PermissionBridgePlugin, permission::PermissionBridgePlugin);
     #[cfg(feature = "extended-plugins")]
     {
         register!(menu::MenuBridgePlugin, menu::MenuBridgePlugin);
-        register!(
-            notification::NotificationBridgePlugin,
-            notification::NotificationBridgePlugin
-        );
+        register!(notification::NotificationBridgePlugin, notification::NotificationBridgePlugin);
         register!(process::ProcessBridgePlugin, process::ProcessBridgePlugin);
-        register!(
-            system_state::SystemStateBridgePlugin,
-            system_state::SystemStateBridgePlugin
-        );
+        register!(system_state::SystemStateBridgePlugin, system_state::SystemStateBridgePlugin);
         register!(
             accessibility::AccessibilityBridgePlugin::new(app),
             accessibility::AccessibilityBridgePlugin

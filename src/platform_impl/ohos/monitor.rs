@@ -137,17 +137,9 @@ fn query() -> VecDeque<MonitorHandle> {
             .iter()
             .filter(|d| d.isAlive)
             .map(|d| {
-                let name: Vec<_> = d
-                    .name
-                    .iter()
-                    .take_while(|c| **c != 0)
-                    .map(|c| c.to_ne_bytes()[0])
-                    .collect();
-                let scale = if d.densityPixels > 0.0 {
-                    d.densityPixels as f64
-                } else {
-                    1.0
-                };
+                let name: Vec<_> =
+                    d.name.iter().take_while(|c| **c != 0).map(|c| c.to_ne_bytes()[0]).collect();
+                let scale = if d.densityPixels > 0.0 { d.densityPixels as f64 } else { 1.0 };
                 MonitorHandle {
                     id: d.id,
                     name: String::from_utf8_lossy(&name).into_owned(),
@@ -164,9 +156,5 @@ fn query() -> VecDeque<MonitorHandle> {
 
 pub(crate) fn primary() -> Option<MonitorHandle> {
     let (id, monitors) = cached();
-    monitors
-        .iter()
-        .find(|m| m.native_id() == id)
-        .cloned()
-        .or_else(|| monitors.into_iter().next())
+    monitors.iter().find(|m| m.native_id() == id).cloned().or_else(|| monitors.into_iter().next())
 }
