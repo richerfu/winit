@@ -133,19 +133,19 @@ ohos-fileshare-binding = "0.2.4"
 ohos-fileuri-binding = "0.1"
 ohos-vsync-binding = "0.3"
 ohos-window-manager-binding = { version = "0.1.2", features = ["api-22"] }
-openharmony-ability = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", features = ["keyboard", "mouse", "drag", "stylus"] }
-openharmony-ability-derive = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
-openharmony-ability-plugin-accessibility = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
-openharmony-ability-plugin-app-control = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
-openharmony-ability-plugin-clipboard = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
-openharmony-ability-plugin-files = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
-openharmony-ability-plugin-menu = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
-openharmony-ability-plugin-notification = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
-openharmony-ability-plugin-permission = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
-openharmony-ability-plugin-process = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
-openharmony-ability-plugin-system-state = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4", optional = true }
-openharmony-ability-plugin-url = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
-openharmony-ability-plugin-window = { git = "https://github.com/harmony-contrib/openharmony-ability.git", rev = "f0c98ec1c40c1576acd1c999c75865c4c19ddec4", version = "1.0.0-beta.4" }
+openharmony-ability = { version = "1.0.0-beta.5", features = ["keyboard", "mouse", "drag", "stylus"] }
+openharmony-ability-derive = "1.0.0-beta.5"
+openharmony-ability-plugin-accessibility = { version = "1.0.0-beta.5", optional = true }
+openharmony-ability-plugin-app-control = "1.0.0-beta.5"
+openharmony-ability-plugin-clipboard = "1.0.0-beta.5"
+openharmony-ability-plugin-files = "1.0.0-beta.5"
+openharmony-ability-plugin-menu = { version = "1.0.0-beta.5", optional = true }
+openharmony-ability-plugin-notification = { version = "1.0.0-beta.5", optional = true }
+openharmony-ability-plugin-permission = "1.0.0-beta.5"
+openharmony-ability-plugin-process = { version = "1.0.0-beta.5", optional = true }
+openharmony-ability-plugin-system-state = { version = "1.0.0-beta.5", optional = true }
+openharmony-ability-plugin-url = "1.0.0-beta.5"
+openharmony-ability-plugin-window = "1.0.0-beta.5"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = "0.6.0"
